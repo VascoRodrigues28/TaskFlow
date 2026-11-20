@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -16,41 +16,19 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import {
+  listTasks,
+  removeTask,
+  saveTask,
+  type Task,
+  type TaskPriority,
+  type TaskStatus,
+} from "@/lib/tasks-api";
 
-type TaskStatus = "todo" | "progress" | "done";
-type TaskPriority = "Baixa" | "Média" | "Alta";
-
-type Task = {
-  id: number;
-  title: string;
-  description: string;
-  status: TaskStatus;
-  priority: TaskPriority;
-};
-
-const initialTasks: Task[] = [
-  {
-    id: 1,
-    title: "Criar página de login",
-    description: "Desenvolver a interface de autenticação.",
-    status: "todo",
-    priority: "Alta",
-  },
-  {
-    id: 2,
-    title: "Configurar FastAPI",
-    description: "Preparar a estrutura inicial do backend.",
-    status: "progress",
-    priority: "Média",
-  },
-  {
-    id: 3,
-    title: "Criar projeto Next.js",
-    description: "Configurar TypeScript e Tailwind CSS.",
-    status: "done",
-    priority: "Baixa",
-  },
-];
+function errorMessage(error: unknown) {
+  if (error instanceof TypeError) return "Não foi possível contactar a API.";
+  return error instanceof Error ? error.message : "Ocorreu um erro inesperado.";
+}
 
 const columns = [
   {
@@ -71,8 +49,29 @@ const columns = [
 ] as const;
 
 export default function Home() {
-  // Estado das tarefas
-  const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [loadError, setLoadError] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    listTasks(controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) setTasks(result);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setLoadError(errorMessage(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setIsLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [loadAttempt]);
 
   // Estado do formulário
   const [showModal, setShowModal] = useState(false);
@@ -82,83 +81,86 @@ export default function Home() {
   const [priority, setPriority] =
     useState<TaskPriority>("Média");
 
-  // Criar nova tarefa
-  
-function addTask(e: FormEvent<HTMLFormElement>) {
-  e.preventDefault();
+  async function runMutation(action: () => Promise<void>, success: string) {
+    if (isSaving) return;
 
-  if (!title.trim()) return;
-
-  if (editingTaskId !== null) {
-    setTasks((previousTasks) =>
-      previousTasks.map((task) =>
-        task.id === editingTaskId
-          ? {
-              ...task,
-              title: title.trim(),
-              description: description.trim(),
-              priority,
-            }
-          : task
-      )
-    );
-  } else {
-    const newTask: Task = {
-      id: Date.now(),
-      title: title.trim(),
-      description: description.trim(),
-      status: "todo",
-      priority,
-    };
-
-    setTasks((previousTasks) => [...previousTasks, newTask]);
+    setIsSaving(true);
+    setFeedback(null);
+    try {
+      await action();
+      setFeedback({ type: "success", text: success });
+    } catch (error) {
+      setFeedback({ type: "error", text: errorMessage(error) });
+    } finally {
+      setIsSaving(false);
+    }
   }
 
-  closeModal();
-}
+  function applyUpdatedTask(updated: Task) {
+    setTasks((previous) => previous.map((task) => task.id === updated.id ? updated : task));
+  }
 
+  function submitTask(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!title.trim()) {
+      setFeedback({ type: "error", text: "Introduz um título para a tarefa." });
+      return;
+    }
 
-  function updateTaskStatus(
-  taskId: number,
-  newStatus: TaskStatus
-) {
-  setTasks((previousTasks) =>
-    previousTasks.map((task) =>
-      task.id === taskId
-        ? { ...task, status: newStatus }
-        : task
-    )
-  );
-}
+    const existing = tasks.find((task) => task.id === editingTaskId);
+    const input = {
+      title: title.trim(),
+      description: description.trim(),
+      priority,
+      status: existing?.status ?? "todo",
+    } satisfies Omit<Task, "id">;
 
-function editTask(task: Task) {
-  setEditingTaskId(task.id);
-  setTitle(task.title);
-  setDescription(task.description);
-  setPriority(task.priority);
-  setShowModal(true);
-}
+    return runMutation(async () => {
+      const saved = await saveTask(input, existing?.id);
+      if (existing) {
+        applyUpdatedTask(saved);
+      } else {
+        setTasks((previous) => [...previous, saved]);
+      }
+      closeModal();
+    }, existing ? "Alterações guardadas." : "Tarefa criada.");
+  }
 
-function deleteTask(taskId: number) {
-  const confirmed = window.confirm(
-    "Tens a certeza de que queres eliminar esta tarefa?"
-  );
+  function updateTaskStatus(task: Task, status: TaskStatus) {
+    const { id, title, description, priority } = task;
 
-  if (!confirmed) return;
+    return runMutation(async () => {
+      const updated = await saveTask({ title, description, priority, status }, id);
+      applyUpdatedTask(updated);
+    }, "Estado atualizado.");
+  }
 
-  setTasks((previousTasks) =>
-    previousTasks.filter((task) => task.id !== taskId)
-  );
-}
+  function editTask(task: Task) {
+    setFeedback(null);
+    setEditingTaskId(task.id);
+    setTitle(task.title);
+    setDescription(task.description);
+    setPriority(task.priority);
+    setShowModal(true);
+  }
 
-function closeModal() {
-  setShowModal(false);
-  setEditingTaskId(null);
-  setTitle("");
-  setDescription("");
-  setPriority("Média");
-}
+  function deleteTask(taskId: number) {
+    if (!window.confirm("Tens a certeza de que queres eliminar esta tarefa?")) return;
 
+    return runMutation(async () => {
+      await removeTask(taskId);
+      setTasks((previous) => previous.filter((task) => task.id !== taskId));
+    }, "Tarefa eliminada.");
+  }
+
+  function closeModal() {
+    setFeedback(null);
+    setShowModal(false);
+    setEditingTaskId(null);
+    setTitle("");
+    setDescription("");
+    setPriority("Média");
+  }
 
   // Estatísticas
   const stats = [
@@ -273,17 +275,47 @@ function closeModal() {
 
             <button
   type="button"
+  disabled={isLoading || Boolean(loadError) || isSaving}
   onClick={() => {
     closeModal();
     setShowModal(true);
   }}
-  className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400"
+  className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
 >
   <Plus size={18} />
   Nova tarefa
 </button>
 
           </div>
+
+          {isLoading && <p role="status" className="mb-6 text-zinc-300">A carregar tarefas…</p>}
+          {loadError && (
+            <div className="mb-6 flex flex-wrap items-center gap-4">
+              <p role="alert" className="text-red-400">{loadError}</p>
+              <button
+                type="button"
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm"
+                onClick={() => {
+                  setLoadError("");
+                  setIsLoading(true);
+                  setLoadAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Tentar novamente
+              </button>
+            </div>
+          )}
+          {!showModal && isSaving && (
+            <p role="status" className="mb-6 text-zinc-300">A guardar alterações…</p>
+          )}
+          {!showModal && feedback && (
+            <p
+              role={feedback.type === "error" ? "alert" : "status"}
+              className={feedback.type === "error" ? "mb-6 text-red-400" : "mb-6 text-emerald-400"}
+            >
+              {feedback.text}
+            </p>
+          )}
 
           {/* ESTATÍSTICAS */}
           <div className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -309,7 +341,7 @@ function closeModal() {
                   </div>
 
                   <p className="text-3xl font-bold">
-                    {stat.value}
+                    {isLoading || loadError ? "—" : stat.value}
                   </p>
                 </div>
               );
@@ -358,12 +390,15 @@ function closeModal() {
                     </div>
 
                     <span className="rounded-md bg-white/5 px-2 py-1 text-xs text-zinc-400">
-                      {columnTasks.length}
+                      {isLoading || loadError ? "—" : columnTasks.length}
                     </span>
                   </div>
 
                   {/* TAREFAS */}
                   <div className="space-y-3">
+                    {!isLoading && !loadError && columnTasks.length === 0 && (
+                      <p className="text-sm text-zinc-400">Sem tarefas nesta coluna.</p>
+                    )}
 
                     {columnTasks.map((task) => (
                       <div
@@ -399,6 +434,7 @@ function closeModal() {
   <button
     type="button"
     onClick={() => editTask(task)}
+    disabled={isSaving}
     title="Editar tarefa"
     aria-label={`Editar ${task.title}`}
     className="rounded-md p-2 text-zinc-400 transition hover:bg-white/10 hover:text-emerald-400"
@@ -409,6 +445,7 @@ function closeModal() {
   <button
     type="button"
     onClick={() => deleteTask(task.id)}
+    disabled={isSaving}
     title="Eliminar tarefa"
     aria-label={`Eliminar ${task.title}`}
     className="rounded-md p-2 text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400"
@@ -434,9 +471,10 @@ function closeModal() {
   <select
     id={`status-${task.id}`}
     value={task.status}
+    disabled={isSaving}
     onChange={(e) =>
       updateTaskStatus(
-        task.id,
+        task,
         e.target.value as TaskStatus
       )
     }
@@ -490,6 +528,7 @@ function closeModal() {
               <button
                 type="button"
                 onClick={closeModal}
+                disabled={isSaving}
                 aria-label="Fechar formulário"
                 className="text-zinc-400 transition hover:text-white"
               >
@@ -499,9 +538,12 @@ function closeModal() {
 
             {/* FORMULÁRIO */}
             <form
-              onSubmit={addTask}
+              onSubmit={submitTask}
               className="space-y-5"
             >
+              {feedback?.type === "error" && (
+                <p role="alert" className="text-sm text-red-400">{feedback.text}</p>
+              )}
 
               {/* TÍTULO */}
               <div>
@@ -516,6 +558,7 @@ function closeModal() {
                   id="task-title"
                   type="text"
                   value={title}
+                  disabled={isSaving}
                   onChange={(e) =>
                     setTitle(e.target.value)
                   }
@@ -537,6 +580,7 @@ function closeModal() {
                 <textarea
                   id="task-description"
                   value={description}
+                  disabled={isSaving}
                   onChange={(e) =>
                     setDescription(e.target.value)
                   }
@@ -558,6 +602,7 @@ function closeModal() {
                 <select
                   id="task-priority"
                   value={priority}
+                  disabled={isSaving}
                   onChange={(e) =>
                     setPriority(
                       e.target.value as TaskPriority
@@ -577,6 +622,7 @@ function closeModal() {
                 <button
                   type="button"
                   onClick={closeModal}
+                  disabled={isSaving}
                   className="rounded-lg border border-white/10 px-5 py-3 text-sm text-zinc-300 transition hover:bg-white/5"
                 >
                   Cancelar
@@ -584,9 +630,10 @@ function closeModal() {
 
                 <button
   type="submit"
-  className="rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400"
+  disabled={isSaving}
+  className="rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
 >
-  {editingTaskId !== null
+  {isSaving ? "A guardar…" : editingTaskId !== null
     ? "Guardar alterações"
     : "Criar tarefa"}
 </button>
