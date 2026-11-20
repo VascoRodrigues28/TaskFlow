@@ -53,3 +53,4 @@ class Task(TaskUpdate):
     status: TaskStatus
     assignee_id: UUID | None
     can_edit: bool = True
+    is_owner: bool = False

@@ -283,6 +283,7 @@ function Dashboard({
   const [showModal, setShowModal] = useState(false);
   const [title, setTitle] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
+  const editingTask = tasks.find((task) => task.id === editingTaskId);
   const [description, setDescription] = useState("");
   const [projectId, setProjectId] = useState("");
   const [dueDate, setDueDate] = useState("");
@@ -351,7 +352,7 @@ function Dashboard({
       await removeProject(project.id);
       setProjects((previous) => previous.filter((item) => item.id !== project.id));
       setTasks((previous) => previous
-        .filter((task) => task.project_id !== project.id || task.can_edit)
+        .filter((task) => task.project_id !== project.id || task.is_owner)
         .map((task) => {
           if (task.project_id !== project.id) return task;
           const assignee_id = task.assignee_id === user.id ? user.id : null;
@@ -372,12 +373,12 @@ function Dashboard({
       return;
     }
 
-    const existing = tasks.find((task) => task.id === editingTaskId);
+    const existing = editingTask;
     const input = {
       title: title.trim(),
       description: description.trim(),
       priority,
-      project_id: projectId || null,
+      ...(!existing || existing.is_owner ? { project_id: projectId || null } : {}),
       due_date: dueDate || null,
     } satisfies TaskInput;
 
@@ -945,7 +946,7 @@ function Dashboard({
                 </select>
               </div>
 
-              <div>
+              {(!editingTask || editingTask.is_owner) && <div>
                 <label htmlFor="task-project" className="mb-2 block text-sm text-muted">{t("Projeto", "Project")}</label>
                 <select
                   id="task-project"
@@ -957,7 +958,7 @@ function Dashboard({
                   <option value="">{t("Sem projeto", "No project")}</option>
                   {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
-              </div>
+              </div>}
 
               <div>
                 <label htmlFor="task-due-date" className="mb-2 block text-sm text-muted">{t("Data de entrega", "Due date")}</label>

@@ -37,6 +37,7 @@ const translatedErrors: Record<string, string> = {
   "Credenciais atualizadas. Inicia sessão novamente.": "Credentials updated. Sign in again.",
   "Esta pessoa já tem cinco tarefas em progresso.": "This person already has five tasks in progress.",
   "Escolhe uma pessoa que participe no projeto.": "Choose someone who is part of the project.",
+  "Só o autor pode mudar o projeto da tarefa.": "Only the task author can move it to another project.",
 };
 
 export function localizeError(message: string, language: Language) {
