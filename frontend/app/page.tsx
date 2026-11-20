@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -16,6 +16,8 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
+import { ApiError, errorMessage } from "@/lib/api";
+import { getProfile, logout, type User } from "@/lib/auth-api";
 import {
   listTasks,
   removeTask,
@@ -24,11 +26,7 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/tasks-api";
-
-function errorMessage(error: unknown) {
-  if (error instanceof TypeError) return "Não foi possível contactar a API.";
-  return error instanceof Error ? error.message : "Ocorreu um erro inesperado.";
-}
+import { AuthForm } from "./auth-form";
 
 const columns = [
   {
@@ -48,7 +46,84 @@ const columns = [
   },
 ] as const;
 
+type Session =
+  | { state: "loading" }
+  | { state: "error"; message: string }
+  | { state: "signed-out"; notice?: string }
+  | { state: "signed-in"; user: User };
+
 export default function Home() {
+  const [session, setSession] = useState<Session>({ state: "loading" });
+  const [sessionAttempt, setSessionAttempt] = useState(0);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getProfile(controller.signal)
+      .then((user) => {
+        if (!controller.signal.aborted) setSession({ state: "signed-in", user });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 401) {
+          setSession({ state: "signed-out" });
+        } else {
+          setSession({ state: "error", message: errorMessage(error) });
+        }
+      });
+    return () => controller.abort();
+  }, [sessionAttempt]);
+
+  function checkSession() {
+    setSession({ state: "loading" });
+    setSessionAttempt((attempt) => attempt + 1);
+  }
+
+  const sessionExpired = useCallback(() => {
+    setSession({ state: "signed-out", notice: "A sessão expirou. Inicia sessão novamente." });
+  }, []);
+
+  if (session.state === "signed-out") {
+    return <AuthForm notice={session.notice} onLogin={checkSession} />;
+  }
+  if (session.state === "signed-in") {
+    return (
+      <Dashboard
+        key={session.user.id}
+        user={session.user}
+        onUnauthorized={sessionExpired}
+        onLogout={async () => {
+          await logout();
+          setSession({ state: "signed-out" });
+        }}
+      />
+    );
+  }
+
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#09090b] p-6 text-white">
+      {session.state === "loading" ? (
+        <p role="status">A verificar a sessão…</p>
+      ) : (
+        <div className="space-y-4">
+          <p role="alert" className="text-red-400">{session.message}</p>
+          <button type="button" onClick={checkSession} className="text-emerald-400 underline">
+            Tentar novamente
+          </button>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function Dashboard({
+  user,
+  onUnauthorized,
+  onLogout,
+}: {
+  user: User;
+  onUnauthorized: () => void;
+  onLogout: () => Promise<void>;
+}) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -64,14 +139,19 @@ export default function Home() {
         if (!controller.signal.aborted) setTasks(result);
       })
       .catch((error: unknown) => {
-        if (!controller.signal.aborted) setLoadError(errorMessage(error));
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 401) {
+          onUnauthorized();
+        } else {
+          setLoadError(errorMessage(error));
+        }
       })
       .finally(() => {
         if (!controller.signal.aborted) setIsLoading(false);
       });
 
     return () => controller.abort();
-  }, [loadAttempt]);
+  }, [loadAttempt, onUnauthorized]);
 
   // Estado do formulário
   const [showModal, setShowModal] = useState(false);
@@ -90,7 +170,11 @@ export default function Home() {
       await action();
       setFeedback({ type: "success", text: success });
     } catch (error) {
-      setFeedback({ type: "error", text: errorMessage(error) });
+      if (error instanceof ApiError && error.status === 401) {
+        onUnauthorized();
+      } else {
+        setFeedback({ type: "error", text: errorMessage(error) });
+      }
     } finally {
       setIsSaving(false);
     }
@@ -273,6 +357,16 @@ export default function Home() {
               </p>
             </div>
 
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="break-all text-sm text-zinc-400">{user.email}</span>
+              <button
+                type="button"
+                disabled={isSaving}
+                onClick={() => runMutation(onLogout, "Sessão terminada.")}
+                className="rounded-lg border border-white/20 px-3 py-2 text-sm hover:bg-white/5 disabled:opacity-50"
+              >
+                Terminar sessão
+              </button>
             <button
   type="button"
   disabled={isLoading || Boolean(loadError) || isSaving}
@@ -285,6 +379,7 @@ export default function Home() {
   <Plus size={18} />
   Nova tarefa
 </button>
+            </div>
 
           </div>
 

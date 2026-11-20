@@ -1,6 +1,6 @@
 from uuid import UUID, uuid4
 
-from sqlalchemy import Text
+from sqlalchemy import ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -14,6 +14,7 @@ class TaskRecord(Base):
     description: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(Text)
+    owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
 
 
 class UserRecord(Base):
