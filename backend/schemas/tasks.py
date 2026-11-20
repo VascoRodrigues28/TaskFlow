@@ -1,7 +1,9 @@
+from datetime import date
+from re import fullmatch
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StringConstraints
+from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
 
 TaskStatus = Literal["todo", "progress", "done"]
 TaskPriority = Literal["Baixa", "Média", "Alta"]
@@ -16,6 +18,16 @@ class TaskUpdate(BaseModel):
     status: TaskStatus
     priority: TaskPriority
     project_id: UUID | None = None
+    due_date: date | None = None
+
+    @field_validator("due_date", mode="before")
+    @classmethod
+    def validate_due_date(cls, value: object) -> object:
+        if value is None or type(value) is date:
+            return value
+        if isinstance(value, str) and fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+            return value
+        raise ValueError("Usa o formato AAAA-MM-DD para a data de entrega.")
 
 
 class TaskCreate(TaskUpdate):

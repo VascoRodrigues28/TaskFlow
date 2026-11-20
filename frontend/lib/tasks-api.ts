@@ -10,9 +10,11 @@ export type Task = {
   status: TaskStatus;
   priority: TaskPriority;
   project_id: string | null;
+  due_date: string | null;
 };
 
-type TaskInput = Omit<Task, "id" | "project_id"> & { project_id?: string | null };
+export type TaskInput = Pick<Task, "title" | "description" | "priority" | "status">
+  & Partial<Pick<Task, "project_id" | "due_date">>;
 
 export async function listTasks(signal: AbortSignal): Promise<Task[]> {
   const response = await request("/tasks", { signal });
