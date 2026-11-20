@@ -1,3 +1,5 @@
+from uuid import UUID, uuid4
+
 from sqlalchemy import Text
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -12,3 +14,11 @@ class TaskRecord(Base):
     description: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(Text)
+
+
+class UserRecord(Base):
+    __tablename__ = "users"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    email: Mapped[str] = mapped_column(Text, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text)
