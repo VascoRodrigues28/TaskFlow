@@ -74,6 +74,9 @@ def get_current_user(credentials: BearerCredentials, session: DatabaseSession) -
     return user
 
 
+CurrentUser = Annotated[UserRecord, Depends(get_current_user)]
+
+
 @router.get("/me")
-def me(user: Annotated[UserRecord, Depends(get_current_user)]) -> User:
+def me(user: CurrentUser) -> User:
     return User.model_validate(user)

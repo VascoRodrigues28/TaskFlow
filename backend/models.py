@@ -23,3 +23,12 @@ class UserRecord(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(Text, unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
+
+
+class ProjectRecord(Base):
+    __tablename__ = "projects"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(Text)
+    description: Mapped[str] = mapped_column(Text)
