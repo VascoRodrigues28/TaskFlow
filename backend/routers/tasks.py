@@ -1,20 +1,14 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Response, status
+from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import delete, select, update
-from sqlalchemy.orm import Session
 
-from database import get_session
-from models import TaskRecord, UserRecord
-from routers.auth import get_current_user
+from models import TaskRecord
+from routers.auth import CurrentUser, DatabaseSession
 from schemas.tasks import Task, TaskCreate, TaskUpdate
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 TaskId = Annotated[int, Path(gt=0)]
-
-DatabaseSession = Annotated[Session, Depends(get_session)]
-CurrentUser = Annotated[UserRecord, Depends(get_current_user)]
-
 
 def task_not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarefa não encontrada.")

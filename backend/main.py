@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routers.auth import router as auth_router
+from routers.projects import router as projects_router
 from routers.tasks import router as tasks_router
 
 load_dotenv(Path(__file__).with_name(".env"))
@@ -27,6 +28,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
+app.include_router(projects_router)
 app.include_router(tasks_router)
 
 
