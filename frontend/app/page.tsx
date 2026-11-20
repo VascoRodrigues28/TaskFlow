@@ -24,11 +24,13 @@ import {
   removeTask,
   saveTask,
   type Task,
+  type TaskInput,
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/tasks-api";
 import { AuthForm } from "./auth-form";
 import { ProjectsPanel } from "./projects-panel";
+import { defaultTaskFilters, filterTasks, TaskFilters } from "./task-filters";
 
 const columns = [
   {
@@ -128,7 +130,7 @@ function Dashboard({
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [projectFilter, setProjectFilter] = useState("all");
+  const [filters, setFilters] = useState(defaultTaskFilters);
   const [section, setSection] = useState<"dashboard" | "projects">("dashboard");
   const [isLoading, setIsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -166,6 +168,7 @@ function Dashboard({
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [projectId, setProjectId] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] =
     useState<TaskPriority>("Média");
 
@@ -214,7 +217,7 @@ function Dashboard({
       setTasks((previous) => previous.map((task) =>
         task.project_id === project.id ? { ...task, project_id: null } : task
       ));
-      setProjectFilter((previous) => previous === project.id ? "" : previous);
+      setFilters((previous) => previous.project === project.id ? { ...previous, project: "" } : previous);
     }, "Projeto eliminado.");
   }
 
@@ -236,7 +239,8 @@ function Dashboard({
       priority,
       status: existing?.status ?? "todo",
       project_id: projectId || null,
-    } satisfies Omit<Task, "id">;
+      due_date: dueDate || null,
+    } satisfies TaskInput;
 
     return runMutation(async () => {
       const saved = await saveTask(input, existing?.id);
@@ -265,6 +269,7 @@ function Dashboard({
     setDescription(task.description);
     setPriority(task.priority);
     setProjectId(task.project_id ?? "");
+    setDueDate(task.due_date ?? "");
     setShowModal(true);
   }
 
@@ -285,12 +290,11 @@ function Dashboard({
     setDescription("");
     setPriority("Média");
     setProjectId("");
+    setDueDate("");
   }
 
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
-  const visibleTasks = projectFilter === "all"
-    ? tasks
-    : tasks.filter((task) => (task.project_id ?? "") === projectFilter);
+  const visibleTasks = filterTasks(tasks, filters);
 
   // Estatísticas
   const stats = [
@@ -443,7 +447,7 @@ function Dashboard({
   disabled={isLoading || Boolean(loadError) || isSaving}
   onClick={() => {
     closeModal();
-    setProjectId(projectFilter === "all" ? "" : projectFilter);
+    setProjectId(filters.project === "all" ? "" : filters.project);
     setShowModal(true);
   }}
   className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
@@ -492,7 +496,7 @@ function Dashboard({
                 onSave={submitProject}
                 onDelete={deleteProject}
                 onViewTasks={(id) => {
-                  setProjectFilter(id);
+                  setFilters({ ...defaultTaskFilters, project: id });
                   navigate("dashboard");
                 }}
                 onClearFeedback={() => setFeedback(null)}
@@ -500,20 +504,13 @@ function Dashboard({
             )
           ) : (
           <>
-          <div className="mb-4 w-full max-w-xs">
-            <label htmlFor="project-filter" className="mb-2 block text-sm text-zinc-300">Filtrar por projeto</label>
-            <select
-              id="project-filter"
-              value={projectFilter}
-              onChange={(event) => setProjectFilter(event.target.value)}
-              disabled={isLoading || Boolean(loadError) || isSaving}
-              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-50"
-            >
-              <option value="all">Todos os projetos</option>
-              <option value="">Sem projeto</option>
-              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-            </select>
-          </div>
+          <TaskFilters
+            filters={filters}
+            onChange={setFilters}
+            projects={projects}
+            columns={columns}
+            disabled={isLoading || Boolean(loadError) || isSaving}
+          />
 
           {/* ESTATÍSTICAS */}
           <div className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -689,7 +686,11 @@ function Dashboard({
 
                         <div className="flex items-center gap-2 border-t border-white/10 pt-3 text-xs text-zinc-500">
                           <CalendarDays size={14} />
-                          Sem prazo definido
+                          {task.due_date ? (
+                            <span>
+                              Entrega a <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
+                            </span>
+                          ) : "Sem prazo definido"}
                         </div>
 
                       </div>
@@ -831,6 +832,16 @@ function Dashboard({
                   <option value="">Sem projeto</option>
                   {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label htmlFor="task-due-date" className="mb-2 block text-sm text-zinc-300">Data de entrega</label>
+                <input
+                  id="task-due-date" type="date" min="0001-01-01" max="9999-12-31"
+                  value={dueDate} disabled={isSaving}
+                  onChange={(event) => setDueDate(event.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white scheme-dark"
+                />
               </div>
 
               {/* BOTÕES */}

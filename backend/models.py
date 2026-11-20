@@ -1,3 +1,4 @@
+from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import ForeignKey, Text
@@ -18,6 +19,7 @@ class TaskRecord(Base):
     project_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
+    due_date: Mapped[date | None] = mapped_column()
 
 
 class UserRecord(Base):
