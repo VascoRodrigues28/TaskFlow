@@ -35,6 +35,8 @@ const translatedErrors: Record<string, string> = {
   "Rota não encontrada.": "Route not found.",
   "A sessão expirou. Inicia sessão novamente.": "Your session expired. Sign in again.",
   "Credenciais atualizadas. Inicia sessão novamente.": "Credentials updated. Sign in again.",
+  "Esta pessoa já tem cinco tarefas em progresso.": "This person already has five tasks in progress.",
+  "Escolhe uma pessoa que participe no projeto.": "Choose someone who is part of the project.",
 };
 
 export function localizeError(message: string, language: Language) {

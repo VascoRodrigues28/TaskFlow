@@ -2,16 +2,18 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Path, Response, status
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select
 
-from models import ProjectRecord, TaskRecord
+from models import ProjectRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
 from routers.projects import project_access, project_not_found
-from schemas.tasks import Task, TaskCreate, TaskStatusUpdate, TaskUpdate
+from schemas.tasks import Task, TaskAssignmentUpdate, TaskCompletionUpdate, TaskCreate, TaskUpdate
 from task_activity import record_task_activity
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 TaskId = Annotated[int, Path(gt=0)]
+MAX_ACTIVE_ASSIGNMENTS = 5
+
 
 def task_not_found() -> HTTPException:
     return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tarefa não encontrada.")
@@ -36,6 +38,34 @@ def task_access(user_id: UUID):
 
 def task_response(task: TaskRecord, user_id: UUID) -> Task:
     return Task.model_validate(task).model_copy(update={"can_edit": task.owner_id == user_id})
+
+
+def can_assign_to(session: DatabaseSession, task: TaskRecord, assignee_id: UUID) -> bool:
+    if task.project_id is None:
+        return task.owner_id == assignee_id
+    return session.scalar(
+        select(ProjectRecord.id).where(ProjectRecord.id == task.project_id, project_access(assignee_id))
+    ) is not None
+
+
+def require_capacity(session: DatabaseSession, assignee_id: UUID) -> None:
+    # Serialise new active assignments for this user without blocking foreign-key checks.
+    session.scalar(select(UserRecord.id).where(UserRecord.id == assignee_id).with_for_update(key_share=True))
+    count = session.scalar(
+        select(func.count()).select_from(TaskRecord)
+        .where(TaskRecord.assignee_id == assignee_id, TaskRecord.status == "progress")
+    )
+    if count is not None and count >= MAX_ACTIVE_ASSIGNMENTS:
+        raise HTTPException(status_code=409, detail="Esta pessoa já tem cinco tarefas em progresso.")
+
+
+def locked_accessible_task(session: DatabaseSession, task_id: int, user_id: UUID) -> TaskRecord:
+    task = session.scalar(
+        select(TaskRecord).where(TaskRecord.id == task_id, task_access(user_id)).with_for_update()
+    )
+    if task is None:
+        raise task_not_found()
+    return task
 
 
 def notify_status_change(
@@ -73,7 +103,7 @@ def get_task(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> Ta
 def create_task(payload: TaskCreate, session: DatabaseSession, user: CurrentUser) -> Task:
     if payload.project_id is not None:
         require_project(session, payload.project_id, user.id, lock=True)
-    task = TaskRecord(**payload.model_dump(), owner_id=user.id)
+    task = TaskRecord(**payload.model_dump(), owner_id=user.id, status="todo")
     session.add(task)
     record_task_activity(session, task, user, "task_added")
     session.commit()
@@ -91,31 +121,56 @@ def update_task(task_id: TaskId, payload: TaskUpdate, session: DatabaseSession, 
     )
     if task is None:
         raise task_not_found()
-    previous_project_id, previous_status = task.project_id, task.status
+    previous_project_id = task.project_id
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
     if task.project_id != previous_project_id:
+        if task.assignee_id is not None and not can_assign_to(session, task, task.assignee_id):
+            task.assignee_id = None
+            if task.status == "progress":
+                task.status = "todo"
         record_task_activity(session, task, user, "task_added")
-    else:
-        notify_status_change(session, task, user, previous_status)
     session.commit()
     return Task.model_validate(task)
 
 
-@router.patch("/{task_id}/status")
-def update_task_status(
-    task_id: TaskId, payload: TaskStatusUpdate, session: DatabaseSession, user: CurrentUser
+@router.patch("/{task_id}/assignment")
+def update_task_assignment(
+    task_id: TaskId, payload: TaskAssignmentUpdate, session: DatabaseSession, user: CurrentUser
 ) -> Task:
-    task = session.scalar(
-        select(TaskRecord)
-        .where(TaskRecord.id == task_id, task_access(user.id))
-        .with_for_update()
-    )
-    if task is None:
-        raise task_not_found()
+    task = locked_accessible_task(session, task_id, user.id)
+    assignee_id = payload.assignee_id
+    if task.assignee_id == assignee_id:
+        return task_response(task, user.id)
+    if assignee_id is not None:
+        if not can_assign_to(session, task, assignee_id):
+            raise HTTPException(status_code=422, detail="Escolhe uma pessoa que participe no projeto.")
+        if task.status != "done":
+            require_capacity(session, assignee_id)
 
     previous_status = task.status
-    task.status = payload.status
+    task.assignee_id = assignee_id
+    if task.status != "done":
+        task.status = "progress" if assignee_id is not None else "todo"
+    notify_status_change(session, task, user, previous_status)
+    session.commit()
+    return task_response(task, user.id)
+
+
+@router.patch("/{task_id}/completion")
+def update_task_completion(
+    task_id: TaskId, payload: TaskCompletionUpdate, session: DatabaseSession, user: CurrentUser
+) -> Task:
+    task = locked_accessible_task(session, task_id, user.id)
+    previous_status = task.status
+    if payload.completed:
+        task.status = "done"
+    elif task.assignee_id is None:
+        task.status = "todo"
+    else:
+        if previous_status == "done":
+            require_capacity(session, task.assignee_id)
+        task.status = "progress"
     notify_status_change(session, task, user, previous_status)
     session.commit()
     return task_response(task, user.id)

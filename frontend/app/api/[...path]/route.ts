@@ -22,9 +22,10 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isCredentialChange = method === "PUT" && endpoint === "auth/credentials";
   const isTaskCollection = endpoint === "tasks" && ["GET", "POST"].includes(method);
   const isTask = /^tasks\/[1-9][0-9]*$/.test(endpoint) && ["GET", "PUT", "DELETE"].includes(method);
-  const isTaskStatus = method === "PATCH" && /^tasks\/[1-9][0-9]*\/status$/.test(endpoint);
+  const isTaskWorkflow = method === "PATCH" && /^tasks\/[1-9][0-9]*\/(?:assignment|completion)$/.test(endpoint);
 
   const isProjectCollection = endpoint === "projects" && ["GET", "POST"].includes(method);
+  const isProjectMembers = method === "GET" && endpoint === "projects/members";
   const isProject = /^projects\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(endpoint)
     && ["PUT", "DELETE"].includes(method);
   const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
@@ -33,7 +34,8 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isNotification = (method === "GET" && endpoint === "notifications")
     || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint));
   const allowed = isLogin || isRegister || isLogout || isProfile || isCredentialChange
-    || isTaskCollection || isTask || isTaskStatus || isProjectCollection || isProject || isInvitation || isNotification;
+    || isTaskCollection || isTask || isTaskWorkflow || isProjectCollection || isProjectMembers
+    || isProject || isInvitation || isNotification;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }

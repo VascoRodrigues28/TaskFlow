@@ -12,9 +12,10 @@ export type Task = {
   project_id: string | null;
   due_date: string | null;
   can_edit: boolean;
+  assignee_id: string | null;
 };
 
-export type TaskInput = Pick<Task, "title" | "description" | "priority" | "status">
+export type TaskInput = Pick<Task, "title" | "description" | "priority">
   & Partial<Pick<Task, "project_id" | "due_date">>;
 
 export async function listTasks(signal: AbortSignal): Promise<Task[]> {
@@ -35,11 +36,14 @@ export async function removeTask(id: number): Promise<void> {
   await request(`/tasks/${id}`, { method: "DELETE" });
 }
 
-export async function setTaskStatus(id: number, status: TaskStatus): Promise<Task> {
-  const response = await request(`/tasks/${id}/status`, {
+export async function updateTaskWorkflow(
+  id: number, change: { assignee_id: string | null } | { completed: boolean },
+): Promise<Task> {
+  const operation = "assignee_id" in change ? "assignment" : "completion";
+  const response = await request(`/tasks/${id}/${operation}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ status }),
+    body: JSON.stringify(change),
   });
   return response.json();
 }

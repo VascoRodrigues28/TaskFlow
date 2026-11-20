@@ -3,6 +3,11 @@ import { request } from "./api";
 export type Project = { id: string; name: string; description: string; role: "host" | "member" };
 export type ProjectInput = Pick<Project, "name" | "description">;
 export type Invitation = { id: string; project_id: string; project_name: string };
+export type ProjectMember = { id: string; project_id: string; name: string };
+
+export async function listProjectMembers(signal: AbortSignal): Promise<ProjectMember[]> {
+  return (await request("/projects/members", { signal })).json();
+}
 
 export async function listProjects(signal: AbortSignal): Promise<Project[]> {
   const response = await request("/projects", { signal });

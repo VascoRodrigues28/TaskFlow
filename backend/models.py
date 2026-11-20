@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Text, UniqueConstraint, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -9,6 +9,13 @@ from database import Base
 
 class TaskRecord(Base):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "status = 'done' OR (status = 'todo' AND assignee_id IS NULL) "
+            "OR (status = 'progress' AND assignee_id IS NOT NULL)",
+            name="ck_tasks_assignment_status",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(Text)
@@ -20,6 +27,7 @@ class TaskRecord(Base):
         ForeignKey("projects.id", ondelete="SET NULL"), index=True
     )
     due_date: Mapped[date | None] = mapped_column()
+    assignee_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
 
 
 class UserRecord(Base):

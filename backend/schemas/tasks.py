@@ -3,7 +3,7 @@ from re import fullmatch
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
 
 TaskStatus = Literal["todo", "progress", "done"]
 TaskPriority = Literal["Baixa", "Média", "Alta"]
@@ -15,7 +15,6 @@ class TaskUpdate(BaseModel):
 
     title: TaskTitle
     description: str
-    status: TaskStatus
     priority: TaskPriority
     project_id: UUID | None = None
     due_date: date | None = None
@@ -32,18 +31,25 @@ class TaskUpdate(BaseModel):
 
 class TaskCreate(TaskUpdate):
     description: str = ""
-    status: TaskStatus = "todo"
     priority: TaskPriority = "Média"
 
 
-class TaskStatusUpdate(BaseModel):
+class TaskAssignmentUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    status: TaskStatus
+    assignee_id: UUID | None
+
+
+class TaskCompletionUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    completed: bool = Field(strict=True)
 
 
 class Task(TaskUpdate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    status: TaskStatus
+    assignee_id: UUID | None
     can_edit: bool = True
