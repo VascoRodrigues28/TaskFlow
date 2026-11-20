@@ -1,4 +1,5 @@
 from typing import Annotated, Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
 
@@ -14,6 +15,7 @@ class TaskUpdate(BaseModel):
     description: str
     status: TaskStatus
     priority: TaskPriority
+    project_id: UUID | None = None
 
 
 class TaskCreate(TaskUpdate):

@@ -15,6 +15,9 @@ class TaskRecord(Base):
     status: Mapped[str] = mapped_column(Text)
     priority: Mapped[str] = mapped_column(Text)
     owner_id: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), index=True
+    )
 
 
 class UserRecord(Base):
