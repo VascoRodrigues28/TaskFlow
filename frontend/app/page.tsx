@@ -14,8 +14,7 @@ import {
   CheckCircle2,
   CalendarDays,
   X,
-  Pencil,
-  Trash2,
+  UserRound,
 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type Profile, type User } from "@/lib/auth-api";
@@ -39,6 +38,7 @@ import { DashboardOverview } from "./dashboard-overview";
 import { NotificationCenter } from "./notification-center";
 import { ProjectsPanel } from "./projects-panel";
 import { SettingsPanel } from "./settings-panel";
+import { TaskDetails } from "./task-details";
 import { defaultTaskFilters, filterTasks, TaskFilters } from "./task-filters";
 
 const sections = [
@@ -48,6 +48,12 @@ const sections = [
   { id: "settings", title: "Definições", englishTitle: "Settings", icon: Settings },
 ] as const;
 type Section = (typeof sections)[number]["id"];
+
+const priorityStyles: Record<TaskPriority, string> = {
+  Alta: "bg-red-500/10 text-danger",
+  Média: "bg-yellow-500/10 text-warning",
+  Baixa: "bg-green-500/10 text-positive",
+};
 
 const columns = [
   {
@@ -283,6 +289,8 @@ function Dashboard({
 
   // Estado do formulário
   const [showModal, setShowModal] = useState(false);
+  const [detailsTaskId, setDetailsTaskId] = useState<number | null>(null);
+  const detailsTask = tasks.find((task) => task.id === detailsTaskId);
   const [title, setTitle] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const editingTask = tasks.find((task) => task.id === editingTaskId);
@@ -314,6 +322,7 @@ function Dashboard({
   }
 
   function navigate(nextSection: Section, nextProjectId: string | null = null) {
+    setDetailsTaskId(null);
     setFeedback(null);
     setSection(nextSection);
     setTaskProjectId(nextProjectId);
@@ -419,6 +428,7 @@ function Dashboard({
     return runMutation(async () => {
       await removeTask(taskId);
       setTasks((previous) => previous.filter((task) => task.id !== taskId));
+      setDetailsTaskId((previous) => previous === taskId ? null : previous);
     }, t("Tarefa eliminada.", "Task deleted."));
   }
 
@@ -439,6 +449,15 @@ function Dashboard({
     const participants = membersByProject.get(member.project_id);
     if (participants) participants.push(member);
     else membersByProject.set(member.project_id, [member]);
+  }
+  const personalAssignee = { id: user.id, name: user.display_name || t("Eu", "Me") };
+  function taskParticipants(task: Task) {
+    return task.project_id ? membersByProject.get(task.project_id) ?? [] : [personalAssignee];
+  }
+  function taskAssigneeName(task: Task) {
+    if (!task.assignee_id) return t("Sem responsável", "Unassigned");
+    return taskParticipants(task).find((participant) => participant.id === task.assignee_id)?.name
+      ?? t("Responsável atual", "Current assignee");
   }
   const currentSection = sections.find((item) => item.id === section)!;
   const sectionTitle = t(currentSection.title, currentSection.englishTitle);
@@ -593,10 +612,10 @@ function Dashboard({
               </button>
             </div>
           )}
-          {!showModal && isSaving && (
+          {!showModal && !detailsTask && isSaving && (
             <p role="status" className="mb-6 text-muted">{t("A guardar alterações…", "Saving changes…")}</p>
           )}
-          {!showModal && feedback && (
+          {!showModal && !detailsTask && feedback && (
             <p
               role={feedback.type === "error" ? "alert" : "status"}
               className={feedback.type === "error" ? "mb-6 text-danger" : "mb-6 text-accent"}
@@ -721,118 +740,41 @@ function Dashboard({
                   </div>
 
                   {/* TAREFAS */}
-                  <div className="space-y-3">
+                  <div className="space-y-2">
                     {!isLoading && !loadError && columnTasks.length === 0 && (
                       <p className="text-sm text-muted">{t("Sem tarefas nesta coluna.", "No tasks in this column.")}</p>
                     )}
 
-                    {columnTasks.map((task) => {
-                      const participants = task.project_id
-                        ? membersByProject.get(task.project_id) ?? []
-                        : [{ id: user.id, name: user.display_name || t("Eu", "Me") }];
-                      return (
-                      <div
-                        key={task.id}
-                        className="rounded-lg border border-line bg-field p-4"
+                    {columnTasks.map((task) => (
+                      <button
+                        key={task.id} type="button" aria-label={task.title}
+                        aria-describedby={`task-summary-${task.id} task-priority-${task.id}`}
+                        onClick={() => {
+                          setFeedback(null);
+                          setDetailsTaskId(task.id);
+                        }}
+                        className="block w-full rounded-lg border border-line bg-field px-3 py-2.5 text-left transition hover:border-emerald-500/40 hover:bg-tint focus-visible:outline-2 focus-visible:outline-emerald-500"
                       >
-
-                        <div className="mb-3 flex items-center justify-between">
-
-                          <span className="text-xs text-accent">
-                            TASK-{task.id}
-                          </span>
-
-                          <span
-                            className={`rounded-md px-2 py-1 text-xs ${
-                              task.priority === "Alta"
-                                ? "bg-red-500/10 text-danger"
-                                : task.priority === "Média"
-                                ? "bg-yellow-500/10 text-warning"
-                                : "bg-green-500/10 text-positive"
-                            }`}
-                          >
+                        <span className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+                          <span className="min-w-0 break-words text-sm font-semibold">{task.title}</span>
+                          <span id={`task-priority-${task.id}`} className={`shrink-0 rounded-md px-1.5 py-0.5 text-xs ${priorityStyles[task.priority]}`}>
                             {priorityLabel(task.priority, language)}
                           </span>
-                        </div>
-
-                        <h5 className="mb-2 text-sm font-semibold">
-                          {task.title}
-                        </h5>
-
-                        {task.project_id && projectNames.has(task.project_id) && (
-                          <p className="mb-2 break-words text-xs text-muted">{projectNames.get(task.project_id)}</p>
-                        )}
-
-{task.can_edit && <div className="mb-3 flex justify-end gap-2">
-  <button
-    type="button"
-    onClick={() => editTask(task)}
-    disabled={isSaving}
-    title={t("Editar tarefa", "Edit task")}
-    aria-label={t(`Editar ${task.title}`, `Edit ${task.title}`)}
-    className="rounded-md p-2 text-muted transition hover:bg-tint hover:text-accent"
-  >
-    <Pencil size={15} />
-  </button>
-
-  <button
-    type="button"
-    onClick={() => deleteTask(task.id)}
-    disabled={isSaving}
-    title={t("Eliminar tarefa", "Delete task")}
-    aria-label={t(`Eliminar ${task.title}`, `Delete ${task.title}`)}
-    className="rounded-md p-2 text-muted transition hover:bg-red-500/10 hover:text-danger"
-  >
-    <Trash2 size={15} />
-  </button>
-</div>}
-
-
-                        <p className="mb-4 text-xs leading-5 text-subtle">
-                          {task.description}
-                        </p>
-
-
-                        <div className="mb-4 space-y-3">
-                          <div>
-                            <label htmlFor={`assignee-${task.id}`} className="mb-2 block text-xs text-subtle">
-                              {t("Responsável", "Assignee")}
-                            </label>
-                            <select
-                              id={`assignee-${task.id}`} value={task.assignee_id ?? ""}
-                              disabled={isSaving || isLoading || Boolean(task.project_id && (!members || membersError))}
-                              onChange={(event) => changeTaskWorkflow(task.id, { assignee_id: event.target.value || null })}
-                              className="w-full rounded-lg border border-line bg-field px-3 py-2 text-xs text-foreground outline-none focus:border-emerald-500 disabled:opacity-50"
-                            >
-                              <option value="">{t("Sem responsável", "Unassigned")}</option>
-                              {task.assignee_id && !participants.some((person) => person.id === task.assignee_id) && (
-                                <option value={task.assignee_id}>{t("Responsável atual", "Current assignee")}</option>
-                              )}
-                              {participants.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
-                            </select>
-                          </div>
-                          <label className="flex w-fit items-center gap-2 text-sm text-muted">
-                            <input
-                              type="checkbox" checked={task.status === "done"} disabled={isSaving || isLoading}
-                              onChange={(event) => changeTaskWorkflow(task.id, { completed: event.target.checked })}
-                              className="size-4 accent-emerald-500"
-                            />
-                            {t("Concluída", "Completed")}
-                          </label>
-                        </div>
-
-                        <div className="flex items-center gap-2 border-t border-line pt-3 text-xs text-subtle">
-                          <CalendarDays size={14} />
-                          {task.due_date ? (
-                            <span>
-                              {t("Entrega a", "Due on")} <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
-                            </span>
-                          ) : t("Sem prazo definido", "No due date")}
-                        </div>
-
-                      </div>
-                      );
-                    })}
+                        </span>
+                        <span id={`task-summary-${task.id}`} className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+                          <span className="flex min-w-0 items-center gap-1">
+                            <UserRound size={13} aria-hidden="true" className="shrink-0" />
+                            <span className="break-all">{taskAssigneeName(task)}</span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <CalendarDays size={13} aria-hidden="true" />
+                            {task.due_date
+                              ? <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
+                              : t("Sem prazo", "No due date")}
+                          </span>
+                        </span>
+                      </button>
+                    ))}
 
                   </div>
                 </div>
@@ -846,6 +788,26 @@ function Dashboard({
           </footer>
         </main>
       </div>
+
+      {detailsTask && (
+        <TaskDetails
+          task={detailsTask}
+          status={localizedColumns.find((column) => column.id === detailsTask.status)?.title ?? detailsTask.status}
+          project={detailsTask.project_id ? projectNames.get(detailsTask.project_id) : undefined}
+          participants={taskParticipants(detailsTask)}
+          busy={isSaving || isLoading}
+          assignmentUnavailable={Boolean(detailsTask.project_id && (!members || membersError))}
+          feedback={feedback}
+          onAssign={(id) => changeTaskWorkflow(detailsTask.id, { assignee_id: id })}
+          onComplete={(completed) => changeTaskWorkflow(detailsTask.id, { completed })}
+          onEdit={() => {
+            setDetailsTaskId(null);
+            editTask(detailsTask);
+          }}
+          onDelete={() => deleteTask(detailsTask.id)}
+          onClose={() => setDetailsTaskId(null)}
+        />
+      )}
 
       {/* MODAL PARA CRIAR TAREFAS */}
       {showModal && (
