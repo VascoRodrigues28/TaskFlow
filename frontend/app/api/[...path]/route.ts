@@ -18,7 +18,8 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isLogin = method === "POST" && endpoint === "auth/login";
   const isRegister = method === "POST" && endpoint === "auth/register";
   const isLogout = method === "POST" && endpoint === "auth/logout";
-  const isProfile = method === "GET" && endpoint === "auth/me";
+  const isProfile = endpoint === "auth/me" && ["GET", "PUT"].includes(method);
+  const isCredentialChange = method === "PUT" && endpoint === "auth/credentials";
   const isTaskCollection = endpoint === "tasks" && ["GET", "POST"].includes(method);
   const isTask = /^tasks\/[1-9][0-9]*$/.test(endpoint) && ["GET", "PUT", "DELETE"].includes(method);
   const isTaskStatus = method === "PATCH" && /^tasks\/[1-9][0-9]*\/status$/.test(endpoint);
@@ -31,7 +32,7 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
     || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
   const isNotification = (method === "GET" && endpoint === "notifications")
     || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint));
-  const allowed = isLogin || isRegister || isLogout || isProfile
+  const allowed = isLogin || isRegister || isLogout || isProfile || isCredentialChange
     || isTaskCollection || isTask || isTaskStatus || isProjectCollection || isProject || isInvitation || isNotification;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
@@ -93,6 +94,11 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
     }
     const response = emptyResponse();
     response.cookies.set(sessionCookie, data.access_token, { ...cookieOptions, maxAge: 30 * 60 });
+    return response;
+  }
+  if (isCredentialChange && upstream.ok) {
+    const response = emptyResponse();
+    response.cookies.set(sessionCookie, "", { ...cookieOptions, maxAge: 0 });
     return response;
   }
 

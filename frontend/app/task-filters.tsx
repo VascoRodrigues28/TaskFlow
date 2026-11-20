@@ -1,4 +1,5 @@
 import type { Task, TaskPriority, TaskStatus } from "@/lib/tasks-api";
+import { priorityLabel, useLanguage } from "@/lib/language";
 
 type Filters = {
   query: string;
@@ -28,52 +29,53 @@ type Props = {
   disabled: boolean;
 };
 
-const fieldStyle = "w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-50";
-const labelStyle = "mb-2 block text-sm text-zinc-300";
+const fieldStyle = "w-full rounded-lg border border-line bg-field px-3 py-2 text-sm text-foreground disabled:opacity-50";
+const labelStyle = "mb-2 block text-sm text-muted";
 
 export function TaskFilters({ filters, onChange, columns, disabled }: Props) {
+  const { t, language } = useLanguage();
   const hasFilters = filters.query !== "" || filters.priority !== "" || filters.status !== "";
 
   return (
     <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <div>
-        <label htmlFor="task-search" className={labelStyle}>Pesquisar tarefas</label>
+        <label htmlFor="task-search" className={labelStyle}>{t("Pesquisar tarefas", "Search tasks")}</label>
         <input
           id="task-search" type="search" value={filters.query} disabled={disabled}
           onChange={(event) => onChange({ ...filters, query: event.target.value })}
-          className={fieldStyle} placeholder="Título ou descrição"
+          className={fieldStyle} placeholder={t("Título ou descrição", "Title or description")}
         />
       </div>
       <div>
-        <label htmlFor="priority-filter" className={labelStyle}>Filtrar por prioridade</label>
+        <label htmlFor="priority-filter" className={labelStyle}>{t("Filtrar por prioridade", "Filter by priority")}</label>
         <select
           id="priority-filter" value={filters.priority} disabled={disabled}
           onChange={(event) => onChange({ ...filters, priority: event.target.value as Filters["priority"] })}
           className={fieldStyle}
         >
-          <option value="">Todas as prioridades</option>
-          <option value="Baixa">Baixa</option>
-          <option value="Média">Média</option>
-          <option value="Alta">Alta</option>
+          <option value="">{t("Todas as prioridades", "All priorities")}</option>
+          {(["Baixa", "Média", "Alta"] as const).map((value) => (
+            <option key={value} value={value}>{priorityLabel(value, language)}</option>
+          ))}
         </select>
       </div>
       <div>
-        <label htmlFor="status-filter" className={labelStyle}>Filtrar por estado</label>
+        <label htmlFor="status-filter" className={labelStyle}>{t("Filtrar por estado", "Filter by status")}</label>
         <select
           id="status-filter" value={filters.status} disabled={disabled}
           onChange={(event) => onChange({ ...filters, status: event.target.value as Filters["status"] })}
           className={fieldStyle}
         >
-          <option value="">Todos os estados</option>
+          <option value="">{t("Todos os estados", "All statuses")}</option>
           {columns.map((column) => <option key={column.id} value={column.id}>{column.title}</option>)}
         </select>
       </div>
       {hasFilters && (
         <button
           type="button" disabled={disabled} onClick={() => onChange(defaultTaskFilters)}
-          className="justify-self-start rounded-lg px-2 py-1 text-sm text-emerald-400 hover:bg-white/5 disabled:opacity-50"
+          className="justify-self-start rounded-lg px-2 py-1 text-sm text-accent hover:bg-tint disabled:opacity-50"
         >
-          Limpar filtros
+          {t("Limpar filtros", "Clear filters")}
         </button>
       )}
     </div>

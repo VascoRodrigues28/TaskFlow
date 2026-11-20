@@ -3,14 +3,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
+from psycopg.errors import UniqueViolation
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_session
 from models import UserRecord
-from schemas.auth import AccessToken, LoginRequest, RegisterRequest, User
-from security import access_token_user_id, create_access_token, dummy_password_hash, password_hasher
+from schemas.auth import AccessToken, CredentialUpdate, LoginRequest, ProfileUpdate, RegisterRequest, User
+from security import access_token_identity, create_access_token, dummy_password_hash, password_hasher
 
 router = APIRouter(prefix="/auth", tags=["Autenticação"])
 DatabaseSession = Annotated[Session, Depends(get_session)]
@@ -55,7 +57,7 @@ def login(payload: LoginRequest, session: DatabaseSession, response: Response) -
         raise unauthorized("Email ou palavra-passe inválidos.")
 
     response.headers["Cache-Control"] = "no-store"
-    return AccessToken(access_token=create_access_token(user.id))
+    return AccessToken(access_token=create_access_token(user.id, user.token_version))
 
 
 def get_current_user(credentials: BearerCredentials, session: DatabaseSession) -> UserRecord:
@@ -64,12 +66,12 @@ def get_current_user(credentials: BearerCredentials, session: DatabaseSession) -
         raise invalid_credentials
 
     try:
-        user_id = access_token_user_id(credentials.credentials)
+        user_id, token_version = access_token_identity(credentials.credentials)
     except (InvalidTokenError, ValueError):
         raise invalid_credentials from None
 
     user = session.get(UserRecord, user_id)
-    if user is None:
+    if user is None or user.token_version != token_version:
         raise invalid_credentials
     return user
 
@@ -80,3 +82,42 @@ CurrentUser = Annotated[UserRecord, Depends(get_current_user)]
 @router.get("/me")
 def me(user: CurrentUser) -> User:
     return User.model_validate(user)
+
+
+@router.put("/me")
+def update_profile(payload: ProfileUpdate, user: CurrentUser, session: DatabaseSession) -> User:
+    for field, value in payload.model_dump().items():
+        setattr(user, field, value)
+    session.commit()
+    return User.model_validate(user)
+
+
+@router.put("/credentials", status_code=status.HTTP_204_NO_CONTENT)
+def update_credentials(payload: CredentialUpdate, user: CurrentUser, session: DatabaseSession) -> Response:
+    original_version = user.token_version
+    locked_user = session.scalar(
+        select(UserRecord).where(UserRecord.id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_user is None or locked_user.token_version != original_version:
+        raise unauthorized("Token de acesso inválido ou expirado.")
+    if not password_hasher.verify(payload.current_password.get_secret_value(), locked_user.password_hash):
+        raise HTTPException(status_code=403, detail="A palavra-passe atual está incorreta.")
+
+    email = payload.email.lower() if payload.email else locked_user.email
+    if email == locked_user.email and payload.new_password is None:
+        raise HTTPException(status_code=422, detail="Indica um email diferente ou uma nova palavra-passe.")
+
+    locked_user.email = email
+    if payload.new_password is not None:
+        locked_user.password_hash = password_hasher.hash(payload.new_password.get_secret_value())
+    locked_user.token_version += 1
+    try:
+        session.commit()
+    except IntegrityError as error:
+        session.rollback()
+        if isinstance(error.orig, UniqueViolation):
+            raise HTTPException(status_code=409, detail="O email já está registado.") from None
+        raise
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

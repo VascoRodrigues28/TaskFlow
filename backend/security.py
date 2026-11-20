@@ -20,16 +20,16 @@ def jwt_secret() -> str:
     return secret
 
 
-def create_access_token(user_id: UUID) -> str:
+def create_access_token(user_id: UUID, token_version: int) -> str:
     now = datetime.now(UTC)
     return jwt.encode(
-        {"sub": str(user_id), "iss": TOKEN_ISSUER, "iat": now, "exp": now + TOKEN_LIFETIME},
+        {"sub": str(user_id), "iss": TOKEN_ISSUER, "iat": now, "exp": now + TOKEN_LIFETIME, "ver": token_version},
         jwt_secret(),
         algorithm=TOKEN_ALGORITHM,
     )
 
 
-def access_token_user_id(token: str) -> UUID:
+def access_token_identity(token: str) -> tuple[UUID, int]:
     claims = jwt.decode(
         token,
         jwt_secret(),
@@ -37,4 +37,7 @@ def access_token_user_id(token: str) -> UUID:
         issuer=TOKEN_ISSUER,
         options={"require": ["sub", "iss", "iat", "exp"]},
     )
-    return UUID(claims["sub"])
+    version = claims.get("ver", 0)
+    if type(version) is not int:
+        raise jwt.InvalidTokenError("Invalid credential version")
+    return UUID(claims["sub"]), version

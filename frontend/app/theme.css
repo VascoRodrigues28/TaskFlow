@@ -1,0 +1,52 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+  --background: light-dark(#f6f7f9, #09090b);
+  --foreground: light-dark(#18181b, #fafafa);
+  --panel: light-dark(#ffffff, #111113);
+  --dialog: light-dark(#ffffff, #18181b);
+  --field: light-dark(#f2f4f6, #18181b);
+  --line: light-dark(#d8dde4, #ffffff1a);
+  --line-strong: light-dark(#b6bfcb, #ffffff33);
+  --tint: light-dark(#e9edf1, #ffffff0d);
+  --muted: light-dark(#4b5563, #a1a1aa);
+  --subtle: light-dark(#596272, #a1a1aa);
+  --accent: light-dark(#047857, #34d399);
+  --danger: light-dark(#b91c1c, #f87171);
+  --warning: light-dark(#854d0e, #facc15);
+  --positive: light-dark(#166534, #4ade80);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="system"] {
+  color-scheme: light dark;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-dialog: var(--dialog);
+  --color-field: var(--field);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-tint: var(--tint);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
+  --color-warning: var(--warning);
+  --color-positive: var(--positive);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
