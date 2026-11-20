@@ -23,4 +23,6 @@ class TaskCreate(TaskUpdate):
 
 
 class Task(TaskUpdate):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
