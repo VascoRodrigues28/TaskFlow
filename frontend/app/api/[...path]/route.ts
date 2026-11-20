@@ -22,7 +22,9 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isTaskCollection = endpoint === "tasks" && ["GET", "POST"].includes(method);
   const isTask = /^tasks\/[1-9][0-9]*$/.test(endpoint) && ["GET", "PUT", "DELETE"].includes(method);
 
-  if (!(isLogin || isRegister || isLogout || isProfile || isTaskCollection || isTask)) {
+  const isProjectList = method === "GET" && endpoint === "projects";
+  const allowed = isLogin || isRegister || isLogout || isProfile || isTaskCollection || isTask || isProjectList;
+  if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }
   if (method !== "GET" && request.headers.get("origin") !== request.nextUrl.origin) {
@@ -58,7 +60,12 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   ).replace(/\/+$/, "");
   let upstream: Response;
   try {
-    upstream = await fetch(`${apiUrl}/${endpoint}`, {
+    const url = new URL(`${apiUrl}/${endpoint}`);
+    const projectId = request.nextUrl.searchParams.get("project_id");
+    if (isTaskCollection && method === "GET" && projectId !== null) {
+      url.searchParams.set("project_id", projectId);
+    }
+    upstream = await fetch(url, {
       method,
       headers,
       body: hasBody ? await request.text() : undefined,

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type User } from "@/lib/auth-api";
+import { listProjects, type Project } from "@/lib/projects-api";
 import {
   listTasks,
   removeTask,
@@ -125,6 +126,8 @@ function Dashboard({
   onLogout: () => Promise<void>;
 }) {
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [projectFilter, setProjectFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState("");
@@ -134,9 +137,11 @@ function Dashboard({
   useEffect(() => {
     const controller = new AbortController();
 
-    listTasks(controller.signal)
-      .then((result) => {
-        if (!controller.signal.aborted) setTasks(result);
+    Promise.all([listTasks(controller.signal), listProjects(controller.signal)])
+      .then(([loadedTasks, loadedProjects]) => {
+        if (controller.signal.aborted) return;
+        setTasks(loadedTasks);
+        setProjects(loadedProjects);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
@@ -158,6 +163,7 @@ function Dashboard({
   const [title, setTitle] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<number | null>(null);
   const [description, setDescription] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [priority, setPriority] =
     useState<TaskPriority>("Média");
 
@@ -197,6 +203,7 @@ function Dashboard({
       description: description.trim(),
       priority,
       status: existing?.status ?? "todo",
+      project_id: projectId || null,
     } satisfies Omit<Task, "id">;
 
     return runMutation(async () => {
@@ -225,6 +232,7 @@ function Dashboard({
     setTitle(task.title);
     setDescription(task.description);
     setPriority(task.priority);
+    setProjectId(task.project_id ?? "");
     setShowModal(true);
   }
 
@@ -244,32 +252,38 @@ function Dashboard({
     setTitle("");
     setDescription("");
     setPriority("Média");
+    setProjectId("");
   }
+
+  const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+  const visibleTasks = projectFilter === "all"
+    ? tasks
+    : tasks.filter((task) => (task.project_id ?? "") === projectFilter);
 
   // Estatísticas
   const stats = [
     {
       title: "Total de tarefas",
-      value: tasks.length,
+      value: visibleTasks.length,
       icon: ListTodo,
     },
     {
       title: "Por fazer",
-      value: tasks.filter(
+      value: visibleTasks.filter(
         (task) => task.status === "todo"
       ).length,
       icon: Circle,
     },
     {
       title: "Em progresso",
-      value: tasks.filter(
+      value: visibleTasks.filter(
         (task) => task.status === "progress"
       ).length,
       icon: Clock3,
     },
     {
       title: "Concluídas",
-      value: tasks.filter(
+      value: visibleTasks.filter(
         (task) => task.status === "done"
       ).length,
       icon: CheckCircle2,
@@ -372,6 +386,7 @@ function Dashboard({
   disabled={isLoading || Boolean(loadError) || isSaving}
   onClick={() => {
     closeModal();
+    setProjectId(projectFilter === "all" ? "" : projectFilter);
     setShowModal(true);
   }}
   className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
@@ -383,7 +398,7 @@ function Dashboard({
 
           </div>
 
-          {isLoading && <p role="status" className="mb-6 text-zinc-300">A carregar tarefas…</p>}
+          {isLoading && <p role="status" className="mb-6 text-zinc-300">A carregar tarefas e projetos…</p>}
           {loadError && (
             <div className="mb-6 flex flex-wrap items-center gap-4">
               <p role="alert" className="text-red-400">{loadError}</p>
@@ -411,6 +426,21 @@ function Dashboard({
               {feedback.text}
             </p>
           )}
+
+          <div className="mb-4 w-full max-w-xs">
+            <label htmlFor="project-filter" className="mb-2 block text-sm text-zinc-300">Filtrar por projeto</label>
+            <select
+              id="project-filter"
+              value={projectFilter}
+              onChange={(event) => setProjectFilter(event.target.value)}
+              disabled={isLoading || Boolean(loadError) || isSaving}
+              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-50"
+            >
+              <option value="all">Todos os projetos</option>
+              <option value="">Sem projeto</option>
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+            </select>
+          </div>
 
           {/* ESTATÍSTICAS */}
           <div className="mb-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -460,7 +490,7 @@ function Dashboard({
             {columns.map((column) => {
               const Icon = column.icon;
 
-              const columnTasks = tasks.filter(
+              const columnTasks = visibleTasks.filter(
                 (task) => task.status === column.id
               );
 
@@ -524,6 +554,9 @@ function Dashboard({
                           {task.title}
                         </h5>
 
+                        {task.project_id && projectNames.has(task.project_id) && (
+                          <p className="mb-2 break-words text-xs text-zinc-400">{projectNames.get(task.project_id)}</p>
+                        )}
 
 <div className="mb-3 flex justify-end gap-2">
   <button
@@ -605,7 +638,7 @@ function Dashboard({
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-task-title"
-            className="w-full max-w-lg rounded-2xl border border-white/10 bg-[#18181b] p-6 shadow-2xl"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#18181b] p-6 shadow-2xl"
           >
 
             {/* CABEÇALHO DO MODAL */}
@@ -708,6 +741,20 @@ function Dashboard({
                   <option value="Baixa">Baixa</option>
                   <option value="Média">Média</option>
                   <option value="Alta">Alta</option>
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="task-project" className="mb-2 block text-sm text-zinc-300">Projeto</label>
+                <select
+                  id="task-project"
+                  value={projectId}
+                  onChange={(event) => setProjectId(event.target.value)}
+                  disabled={isSaving}
+                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white"
+                >
+                  <option value="">Sem projeto</option>
+                  {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
               </div>
 

@@ -9,9 +9,10 @@ export type Task = {
   description: string;
   status: TaskStatus;
   priority: TaskPriority;
+  project_id: string | null;
 };
 
-type TaskInput = Omit<Task, "id">;
+type TaskInput = Omit<Task, "id" | "project_id"> & { project_id?: string | null };
 
 export async function listTasks(signal: AbortSignal): Promise<Task[]> {
   const response = await request("/tasks", { signal });
