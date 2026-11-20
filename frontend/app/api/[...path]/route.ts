@@ -21,12 +21,18 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isProfile = method === "GET" && endpoint === "auth/me";
   const isTaskCollection = endpoint === "tasks" && ["GET", "POST"].includes(method);
   const isTask = /^tasks\/[1-9][0-9]*$/.test(endpoint) && ["GET", "PUT", "DELETE"].includes(method);
+  const isTaskStatus = method === "PATCH" && /^tasks\/[1-9][0-9]*\/status$/.test(endpoint);
 
   const isProjectCollection = endpoint === "projects" && ["GET", "POST"].includes(method);
   const isProject = /^projects\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(endpoint)
     && ["PUT", "DELETE"].includes(method);
+  const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
+  const isInvitation = (method === "GET" && endpoint === "projects/invitations")
+    || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
+  const isNotification = (method === "GET" && endpoint === "notifications")
+    || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint));
   const allowed = isLogin || isRegister || isLogout || isProfile
-    || isTaskCollection || isTask || isProjectCollection || isProject;
+    || isTaskCollection || isTask || isTaskStatus || isProjectCollection || isProject || isInvitation || isNotification;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }
@@ -53,7 +59,7 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
     if (!token) return failure(401, "Inicia sessão para continuar.");
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const hasBody = method === "POST" || method === "PUT";
+  const hasBody = method === "POST" || method === "PUT" || method === "PATCH";
   if (hasBody) {
     headers.set("Content-Type", request.headers.get("content-type") ?? "application/json");
   }
@@ -96,4 +102,4 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
 }
 
-export { handle as GET, handle as POST, handle as PUT, handle as DELETE };
+export { handle as GET, handle as POST, handle as PUT, handle as PATCH, handle as DELETE };

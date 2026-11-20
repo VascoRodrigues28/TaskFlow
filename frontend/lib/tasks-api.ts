@@ -11,6 +11,7 @@ export type Task = {
   priority: TaskPriority;
   project_id: string | null;
   due_date: string | null;
+  can_edit: boolean;
 };
 
 export type TaskInput = Pick<Task, "title" | "description" | "priority" | "status">
@@ -32,4 +33,13 @@ export async function saveTask(task: TaskInput, id?: number): Promise<Task> {
 
 export async function removeTask(id: number): Promise<void> {
   await request(`/tasks/${id}`, { method: "DELETE" });
+}
+
+export async function setTaskStatus(id: number, status: TaskStatus): Promise<Task> {
+  const response = await request(`/tasks/${id}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  return response.json();
 }

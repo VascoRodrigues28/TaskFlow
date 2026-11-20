@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from routers.auth import router as auth_router
+from routers.notifications import router as notifications_router
 from routers.projects import router as projects_router
 from routers.tasks import router as tasks_router
 
@@ -24,10 +25,11 @@ app.add_middleware(
         ).split(",")
         if origin.strip()
     ],
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
+app.include_router(notifications_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)
 

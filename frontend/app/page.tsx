@@ -18,19 +18,32 @@ import {
 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type User } from "@/lib/auth-api";
-import { listProjects, removeProject, saveProject, type Project, type ProjectInput } from "@/lib/projects-api";
+import {
+  acceptInvitation, listProjects, removeProject, saveProject, sendInvitation,
+  type Project, type ProjectInput,
+} from "@/lib/projects-api";
 import {
   listTasks,
   removeTask,
   saveTask,
+  setTaskStatus,
   type Task,
   type TaskInput,
   type TaskPriority,
   type TaskStatus,
 } from "@/lib/tasks-api";
 import { AuthForm } from "./auth-form";
+import { DashboardOverview } from "./dashboard-overview";
+import { NotificationCenter } from "./notification-center";
 import { ProjectsPanel } from "./projects-panel";
 import { defaultTaskFilters, filterTasks, TaskFilters } from "./task-filters";
+
+const sections = [
+  { id: "dashboard", title: "Dashboard", icon: LayoutDashboard },
+  { id: "projects", title: "Projetos", icon: FolderKanban },
+  { id: "tasks", title: "Tarefas", icon: ListTodo },
+] as const;
+type Section = (typeof sections)[number]["id"];
 
 const columns = [
   {
@@ -131,7 +144,8 @@ function Dashboard({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [filters, setFilters] = useState(defaultTaskFilters);
-  const [section, setSection] = useState<"dashboard" | "projects">("dashboard");
+  const [section, setSection] = useState<Section>("dashboard");
+  const [taskProjectId, setTaskProjectId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState("");
@@ -141,7 +155,10 @@ function Dashboard({
   useEffect(() => {
     const controller = new AbortController();
 
-    Promise.all([listTasks(controller.signal), listProjects(controller.signal)])
+    Promise.all([
+      listTasks(controller.signal),
+      listProjects(controller.signal),
+    ])
       .then(([loadedTasks, loadedProjects]) => {
         if (controller.signal.aborted) return;
         setTasks(loadedTasks);
@@ -193,9 +210,16 @@ function Dashboard({
     }
   }
 
-  function navigate(nextSection: typeof section) {
+  function navigate(nextSection: Section, nextProjectId: string | null = null) {
     setFeedback(null);
     setSection(nextSection);
+    setTaskProjectId(nextProjectId);
+    if (nextSection === "tasks") setFilters(defaultTaskFilters);
+    window.scrollTo({ top: 0 });
+  }
+
+  function viewProjectTasks(id: string) {
+    navigate("tasks", id);
   }
 
   function submitProject(input: ProjectInput, id?: string) {
@@ -208,16 +232,24 @@ function Dashboard({
     }, id ? "Projeto atualizado." : "Projeto criado.");
   }
 
+  function joinProject(id: string) {
+    return runMutation(async () => {
+      await acceptInvitation(id);
+      setLoadError("");
+      setIsLoading(true);
+      setLoadAttempt((attempt) => attempt + 1);
+    }, "Convite aceite.");
+  }
+
   function deleteProject(project: Project) {
     if (!window.confirm(`Eliminar «${project.name}»? As tarefas associadas ficam sem projeto.`)) return;
 
     return runMutation(async () => {
       await removeProject(project.id);
       setProjects((previous) => previous.filter((item) => item.id !== project.id));
-      setTasks((previous) => previous.map((task) =>
-        task.project_id === project.id ? { ...task, project_id: null } : task
-      ));
-      setFilters((previous) => previous.project === project.id ? { ...previous, project: "" } : previous);
+      setTasks((previous) => previous
+        .filter((task) => task.project_id !== project.id || task.can_edit)
+        .map((task) => task.project_id === project.id ? { ...task, project_id: null } : task));
     }, "Projeto eliminado.");
   }
 
@@ -253,11 +285,9 @@ function Dashboard({
     }, existing ? "Alterações guardadas." : "Tarefa criada.");
   }
 
-  function updateTaskStatus(task: Task, status: TaskStatus) {
-    const { id, title, description, priority } = task;
-
+  function updateTaskStatus(id: number, status: TaskStatus) {
     return runMutation(async () => {
-      const updated = await saveTask({ title, description, priority, status }, id);
+      const updated = await setTaskStatus(id, status);
       applyUpdatedTask(updated);
     }, "Estado atualizado.");
   }
@@ -294,7 +324,10 @@ function Dashboard({
   }
 
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
-  const visibleTasks = filterTasks(tasks, filters);
+  const sectionTitle = sections.find((item) => item.id === section)?.title;
+  const taskProjectName = taskProjectId === null ? undefined : projectNames.get(taskProjectId);
+  const sectionTasks = taskProjectId === null ? tasks : tasks.filter((task) => task.project_id === taskProjectId);
+  const visibleTasks = filterTasks(sectionTasks, filters);
 
   // Estatísticas
   const stats = [
@@ -341,53 +374,21 @@ function Dashboard({
           </h1>
 
           <nav className="space-y-2">
-            {[
-              {
-                name: "Dashboard",
-                icon: LayoutDashboard,
-                target: "dashboard",
-              },
-              {
-                name: "Projetos",
-                icon: FolderKanban,
-                target: "projects",
-              },
-              {
-                name: "Tarefas",
-                icon: ListTodo,
-              },
-              {
-                name: "Definições",
-                icon: Settings,
-              },
-            ].map((item) => {
-              const Icon = item.icon;
-              const target = item.target === "dashboard" || item.target === "projects" ? item.target : undefined;
-              const active = target === section;
-              const style = `flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm ${
-                active ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-white/5 hover:text-white"
-              }`;
-
-              if (target) {
-                return (
-                  <button
-                    key={item.name} type="button" className={style}
-                    aria-current={active ? "page" : undefined}
-                    disabled={isSaving} onClick={() => navigate(target)}
-                  >
-                    <Icon size={18} aria-hidden="true" />
-                    {item.name}
-                  </button>
-                );
-              }
-
-              return (
-                <div key={item.name} className={style}>
-                  <Icon size={18} aria-hidden="true" />
-                  {item.name}
-                </div>
-              );
-            })}
+            {sections.map(({ id, title, icon: Icon }) => (
+              <button
+                key={id} type="button"
+                aria-current={section === id ? "page" : undefined}
+                disabled={isSaving} onClick={() => navigate(id)}
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-zinc-400 hover:bg-white/5 hover:text-white aria-[current=page]:bg-emerald-500/10 aria-[current=page]:text-emerald-400"
+              >
+                <Icon size={18} aria-hidden="true" />
+                {title}
+              </button>
+            ))}
+            <div className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-zinc-400">
+              <Settings size={18} aria-hidden="true" />
+              Definições
+            </div>
           </nav>
 
           <div className="mt-auto border-t border-white/10 pt-6 text-sm text-zinc-500">
@@ -397,21 +398,16 @@ function Dashboard({
 
         {/* CONTEÚDO PRINCIPAL */}
         <main className="min-w-0 flex-1 p-6 md:p-10">
-          <nav aria-label="Secções" className="mb-6 flex gap-3 md:hidden">
-            <button
-              type="button" aria-current={section === "dashboard" ? "page" : undefined}
-              disabled={isSaving} onClick={() => navigate("dashboard")}
-              className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
-            >
-              Dashboard
-            </button>
-            <button
-              type="button" aria-current={section === "projects" ? "page" : undefined}
-              disabled={isSaving} onClick={() => navigate("projects")}
-              className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
-            >
-              Projetos
-            </button>
+          <nav aria-label="Secções" className="mb-6 flex flex-wrap gap-3 md:hidden">
+            {sections.map(({ id, title }) => (
+              <button
+                key={id} type="button" aria-current={section === id ? "page" : undefined}
+                disabled={isSaving} onClick={() => navigate(id)}
+                className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
+              >
+                {title}
+              </button>
+            ))}
           </nav>
 
           {/* HEADER */}
@@ -419,11 +415,11 @@ function Dashboard({
 
             <div>
               <p className="mb-2 text-sm text-zinc-500">
-                Workspace / {section === "projects" ? "Projetos" : "Dashboard"}
+                Workspace / {sectionTitle}
               </p>
 
               <h2 className="text-3xl font-bold">
-                {section === "projects" ? "Projetos" : "Dashboard"}
+                {taskProjectName ? `Tarefas de ${taskProjectName}` : sectionTitle}
               </h2>
 
               {section === "dashboard" && <p className="mt-2 text-zinc-400">
@@ -434,6 +430,7 @@ function Dashboard({
 
             <div className="flex flex-wrap items-center gap-3">
               <span className="break-all text-sm text-zinc-400">{user.email}</span>
+              <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
               <button
                 type="button"
                 disabled={isSaving}
@@ -442,12 +439,12 @@ function Dashboard({
               >
                 Terminar sessão
               </button>
-            {section === "dashboard" && <button
+            {section === "tasks" && <button
   type="button"
   disabled={isLoading || Boolean(loadError) || isSaving}
   onClick={() => {
     closeModal();
-    setProjectId(filters.project === "all" ? "" : filters.project);
+    setProjectId(taskProjectId ?? "");
     setShowModal(true);
   }}
   className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
@@ -495,19 +492,24 @@ function Dashboard({
                 isSaving={isSaving}
                 onSave={submitProject}
                 onDelete={deleteProject}
-                onViewTasks={(id) => {
-                  setFilters({ ...defaultTaskFilters, project: id });
-                  navigate("dashboard");
-                }}
+                onInvite={(id, email) => runMutation(() => sendInvitation(id, email), "Convite criado.")}
+                onViewTasks={viewProjectTasks}
                 onClearFeedback={() => setFeedback(null)}
               />
             )
+          ) : section === "dashboard" ? (
+          !isLoading && !loadError && (
+            <DashboardOverview
+              projects={projects}
+              tasks={tasks}
+              onViewTasks={viewProjectTasks}
+            />
+          )
           ) : (
           <>
           <TaskFilters
             filters={filters}
             onChange={setFilters}
-            projects={projects}
             columns={columns}
             disabled={isLoading || Boolean(loadError) || isSaving}
           />
@@ -628,7 +630,7 @@ function Dashboard({
                           <p className="mb-2 break-words text-xs text-zinc-400">{projectNames.get(task.project_id)}</p>
                         )}
 
-<div className="mb-3 flex justify-end gap-2">
+{task.can_edit && <div className="mb-3 flex justify-end gap-2">
   <button
     type="button"
     onClick={() => editTask(task)}
@@ -650,7 +652,7 @@ function Dashboard({
   >
     <Trash2 size={15} />
   </button>
-</div>
+</div>}
 
 
                         <p className="mb-4 text-xs leading-5 text-zinc-500">
@@ -672,7 +674,7 @@ function Dashboard({
     disabled={isSaving}
     onChange={(e) =>
       updateTaskStatus(
-        task,
+        task.id,
         e.target.value as TaskStatus
       )
     }
