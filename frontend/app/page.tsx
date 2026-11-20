@@ -480,7 +480,7 @@ function Dashboard({
       <div className="flex min-h-screen">
 
         {/* SIDEBAR */}
-        <aside className="hidden w-64 flex-col border-r border-line bg-panel p-6 md:flex">
+        <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col self-start overflow-y-auto border-r border-line bg-panel p-6 md:flex">
 
           <h1 className="mb-12 text-2xl font-bold">
             Task
