@@ -73,3 +73,11 @@ class NotificationRecord(Base):
     task_title: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class DailyActivityRecord(Base):
+    __tablename__ = "daily_activity"
+
+    user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(primary_key=True)
+    count: Mapped[int] = mapped_column()

@@ -33,9 +33,10 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
     || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
   const isNotification = (method === "GET" && endpoint === "notifications")
     || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint));
+  const isActivity = method === "GET" && endpoint === "activity";
   const allowed = isLogin || isRegister || isLogout || isProfile || isCredentialChange
     || isTaskCollection || isTask || isTaskWorkflow || isProjectCollection || isProjectMembers
-    || isProject || isInvitation || isNotification;
+    || isProject || isInvitation || isNotification || isActivity;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }

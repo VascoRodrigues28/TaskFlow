@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException, Response, status
 from sqlalchemy import case, or_, select, union, update
 from sqlalchemy.dialects.postgresql import insert
 
+from activity import record_contribution
 from models import ProjectInvitationRecord, ProjectRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
 from schemas.projects import InviteToProject, PendingInvitation, Project, ProjectCreate, ProjectMember, ProjectUpdate
@@ -135,6 +136,7 @@ def get_project(project_id: UUID, session: DatabaseSession, user: CurrentUser) -
 def create_project(payload: ProjectCreate, session: DatabaseSession, user: CurrentUser) -> Project:
     project = ProjectRecord(**payload.model_dump(), owner_id=user.id)
     session.add(project)
+    record_contribution(session, user.id)
     session.commit()
     return Project.model_validate(project)
 

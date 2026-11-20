@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import delete, func, or_, select
 
+from activity import record_contribution
 from models import ProjectRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
 from routers.projects import project_access, project_not_found
@@ -106,6 +107,7 @@ def create_task(payload: TaskCreate, session: DatabaseSession, user: CurrentUser
     task = TaskRecord(**payload.model_dump(), owner_id=user.id, status="todo")
     session.add(task)
     record_task_activity(session, task, user, "task_added")
+    record_contribution(session, user.id)
     session.commit()
     return task_response(task, user.id)
 
@@ -153,6 +155,8 @@ def update_task_assignment(
     if task.status != "done":
         task.status = "progress" if assignee_id is not None else "todo"
     notify_status_change(session, task, user, previous_status)
+    if assignee_id is not None:
+        record_contribution(session, user.id)
     session.commit()
     return task_response(task, user.id)
 
@@ -172,6 +176,8 @@ def update_task_completion(
             require_capacity(session, task.assignee_id)
         task.status = "progress"
     notify_status_change(session, task, user, previous_status)
+    if payload.completed and previous_status != "done":
+        record_contribution(session, user.id)
     session.commit()
     return task_response(task, user.id)
 

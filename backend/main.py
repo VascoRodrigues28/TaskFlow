@@ -8,6 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from routers.activity import router as activity_router
 from routers.auth import router as auth_router
 from routers.notifications import router as notifications_router
 from routers.projects import router as projects_router
@@ -29,6 +30,7 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 app.include_router(auth_router)
+app.include_router(activity_router)
 app.include_router(notifications_router)
 app.include_router(projects_router)
 app.include_router(tasks_router)
