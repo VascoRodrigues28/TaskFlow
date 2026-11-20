@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Bell } from "lucide-react";
+import { ArrowUpRight, Bell } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { localizeError, useLanguage } from "@/lib/language";
-import { listNotifications, markNotificationRead, type NotificationFeed } from "@/lib/notifications-api";
+import { listNotifications, markNotificationRead, type NotificationFeed, type TaskNotification } from "@/lib/notifications-api";
 import { listInvitations, type Invitation } from "@/lib/projects-api";
 
 const action = {
@@ -19,9 +19,10 @@ const dateFormat = {
 };
 
 export function NotificationCenter({
-  onAccept, onUnauthorized, disabled,
+  onAccept, onOpen, onUnauthorized, disabled,
 }: {
-  onAccept: (id: string) => Promise<boolean>;
+  onAccept: (id: string, projectId: string) => Promise<boolean>;
+  onOpen: (notification: TaskNotification) => Promise<void>;
   onUnauthorized: () => void;
   disabled: boolean;
 }) {
@@ -139,8 +140,9 @@ export function NotificationCenter({
                   aria-label={t(`Aceitar convite para ${invitation.project_name}`, `Accept invitation to ${invitation.project_name}`)}
                   className="mt-2 rounded-lg bg-emerald-400 px-3 py-1.5 font-semibold text-black disabled:opacity-50"
                   onClick={() => run(async () => {
-                    if (await onAccept(invitation.id)) {
+                    if (await onAccept(invitation.id, invitation.project_id)) {
                       setInvitations((current) => current.filter((item) => item.id !== invitation.id));
+                      setOpen(false);
                     }
                   })}
                 >
@@ -148,12 +150,32 @@ export function NotificationCenter({
                 </button>
               </li>
             ))}
-            {feed?.items.map((notification) => (
+            {feed?.items.map((notification) => {
+              const message = (
+                <>
+                  <span className="block break-words"><strong>{notification.actor_email}</strong> {t(action[notification.kind][0], action[notification.kind][1])} <strong>{notification.task_title}</strong> {t("em", "in")} <strong>{notification.project_name}</strong>.</span>
+                  <time dateTime={notification.created_at} className="mt-1 block text-xs text-muted">
+                    {dateFormat[language].format(new Date(notification.created_at))}
+                  </time>
+                </>
+              );
+              const linkable = notification.task_id != null || notification.project_id != null;
+              return (
               <li key={notification.id} className="rounded-lg border border-line bg-field p-3 text-sm">
-                <p className="break-words"><strong>{notification.actor_email}</strong> {t(action[notification.kind][0], action[notification.kind][1])} <strong>{notification.task_title}</strong> {t("em", "in")} <strong>{notification.project_name}</strong>.</p>
-                <time dateTime={notification.created_at} className="mt-1 block text-xs text-muted">
-                  {dateFormat[language].format(new Date(notification.created_at))}
-                </time>
+                {linkable ? (
+                  <button
+                    type="button" disabled={pending || disabled}
+                    className="flex w-full items-start justify-between gap-2 rounded text-left hover:text-accent disabled:opacity-50"
+                    onClick={() => run(async () => {
+                      await onOpen(notification);
+                      setOpen(false);
+                      if (!notification.read_at) await markNotificationRead(notification.id);
+                    })}
+                  >
+                    <span className="min-w-0">{message}</span>
+                    <ArrowUpRight size={16} aria-hidden="true" className="shrink-0 text-accent" />
+                  </button>
+                ) : message}
                 {!notification.read_at && (
                   <button
                     type="button" disabled={pending}
@@ -164,7 +186,8 @@ export function NotificationCenter({
                   </button>
                 )}
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       )}

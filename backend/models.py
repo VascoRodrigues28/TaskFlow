@@ -71,6 +71,8 @@ class NotificationRecord(Base):
     actor_email: Mapped[str] = mapped_column(Text)
     project_name: Mapped[str] = mapped_column(Text)
     task_title: Mapped[str] = mapped_column(Text)
+    task_id: Mapped[int | None] = mapped_column()
+    project_id: Mapped[UUID | None] = mapped_column()
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 

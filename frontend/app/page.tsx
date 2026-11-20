@@ -20,10 +20,11 @@ import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type Profile, type User } from "@/lib/auth-api";
 import { LanguageContext, localizeError, priorityLabel, useLanguage } from "@/lib/language";
 import {
-  acceptInvitation, listProjectMembers, listProjects, removeProject, saveProject, sendInvitation,
+  acceptInvitation, getProject, listProjectMembers, listProjects, removeProject, saveProject, sendInvitation,
   type Project, type ProjectInput, type ProjectMember,
 } from "@/lib/projects-api";
 import {
+  getTask,
   listTasks,
   removeTask,
   saveTask,
@@ -36,6 +37,7 @@ import { AuthForm } from "./auth-form";
 import { ActivityCalendar } from "./activity-calendar";
 import { DashboardOverview } from "./dashboard-overview";
 import { NotificationCenter } from "./notification-center";
+import type { TaskNotification } from "@/lib/notifications-api";
 import { ProjectsPanel } from "./projects-panel";
 import { SettingsPanel } from "./settings-panel";
 import { TaskDetails } from "./task-details";
@@ -344,13 +346,45 @@ function Dashboard({
     }, id ? t("Projeto atualizado.", "Project updated.") : t("Projeto criado.", "Project created."));
   }
 
-  function joinProject(id: string) {
+  function refreshWorkspace() {
+    setLoadError("");
+    setIsLoading(true);
+    setLoadAttempt((attempt) => attempt + 1);
+  }
+
+  function joinProject(id: string, projectId: string) {
     return runMutation(async () => {
       await acceptInvitation(id);
-      setLoadError("");
-      setIsLoading(true);
-      setLoadAttempt((attempt) => attempt + 1);
+      viewProjectTasks(projectId);
+      refreshWorkspace();
     }, t("Convite aceite.", "Invitation accepted."));
+  }
+
+  async function openNotification(notification: TaskNotification) {
+    if (notification.task_id !== null) {
+      let task: Task | undefined;
+      try {
+        task = await getTask(notification.task_id);
+      } catch (error) {
+        if (!(error instanceof ApiError && error.status === 404)) throw error;
+        setTasks((previous) => previous.filter((item) => item.id !== notification.task_id));
+      }
+      if (task) {
+        setTasks((previous) => [...previous.filter((item) => item.id !== task.id), task].sort((a, b) => a.id - b.id));
+        navigate("tasks", task.project_id);
+        setDetailsTaskId(task.id);
+        return;
+      }
+    }
+    if (notification.project_id !== null) {
+      const project = await getProject(notification.project_id);
+      setProjects((previous) => [...previous.filter((item) => item.id !== project.id), project]
+        .sort((a, b) => a.name.localeCompare(b.name, "pt-PT")));
+      viewProjectTasks(project.id);
+      refreshWorkspace();
+      return;
+    }
+    throw new Error(t("A tarefa já não está disponível.", "This task is no longer available."));
   }
 
   function deleteProject(project: Project) {
@@ -545,7 +579,7 @@ function Dashboard({
         {/* CONTEÚDO PRINCIPAL */}
         <main className="relative min-w-0 flex-1 p-6 md:p-10">
           <div className="absolute right-6 top-6 md:right-10 md:top-10">
-            <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
+            <NotificationCenter onAccept={joinProject} onOpen={openNotification} onUnauthorized={onUnauthorized} disabled={isSaving} />
           </div>
           <nav aria-label={t("Secções", "Sections")} className="mb-6 flex flex-wrap gap-3 pr-14 md:hidden">
             {sections.map(({ id, title, englishTitle }) => (

@@ -27,7 +27,7 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isProjectCollection = endpoint === "projects" && ["GET", "POST"].includes(method);
   const isProjectMembers = method === "GET" && endpoint === "projects/members";
   const isProject = /^projects\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(endpoint)
-    && ["PUT", "DELETE"].includes(method);
+    && ["GET", "PUT", "DELETE"].includes(method);
   const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
   const isInvitation = (method === "GET" && endpoint === "projects/invitations")
     || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
