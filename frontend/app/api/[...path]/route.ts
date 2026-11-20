@@ -22,8 +22,11 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isTaskCollection = endpoint === "tasks" && ["GET", "POST"].includes(method);
   const isTask = /^tasks\/[1-9][0-9]*$/.test(endpoint) && ["GET", "PUT", "DELETE"].includes(method);
 
-  const isProjectList = method === "GET" && endpoint === "projects";
-  const allowed = isLogin || isRegister || isLogout || isProfile || isTaskCollection || isTask || isProjectList;
+  const isProjectCollection = endpoint === "projects" && ["GET", "POST"].includes(method);
+  const isProject = /^projects\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(endpoint)
+    && ["PUT", "DELETE"].includes(method);
+  const allowed = isLogin || isRegister || isLogout || isProfile
+    || isTaskCollection || isTask || isProjectCollection || isProject;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }
