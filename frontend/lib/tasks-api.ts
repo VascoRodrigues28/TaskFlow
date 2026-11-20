@@ -12,6 +12,7 @@ export type Task = {
   project_id: string | null;
   due_date: string | null;
   can_edit: boolean;
+  is_owner: boolean;
   assignee_id: string | null;
 };
 

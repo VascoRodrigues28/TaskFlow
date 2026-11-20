@@ -37,7 +37,7 @@ def task_access(user_id: UUID):
 
 
 def task_response(task: TaskRecord, user_id: UUID) -> Task:
-    return Task.model_validate(task).model_copy(update={"can_edit": task.owner_id == user_id})
+    return Task.model_validate(task).model_copy(update={"is_owner": task.owner_id == user_id})
 
 
 def can_assign_to(session: DatabaseSession, task: TaskRecord, assignee_id: UUID) -> bool:
@@ -107,20 +107,20 @@ def create_task(payload: TaskCreate, session: DatabaseSession, user: CurrentUser
     session.add(task)
     record_task_activity(session, task, user, "task_added")
     session.commit()
-    return Task.model_validate(task)
+    return task_response(task, user.id)
 
 
 @router.put("/{task_id}")
 def update_task(task_id: TaskId, payload: TaskUpdate, session: DatabaseSession, user: CurrentUser) -> Task:
     if payload.project_id is not None:
         require_project(session, payload.project_id, user.id, lock=True)
-    task = session.scalar(
-        select(TaskRecord)
-        .where(TaskRecord.id == task_id, TaskRecord.owner_id == user.id)
-        .with_for_update()
-    )
-    if task is None:
-        raise task_not_found()
+    task = locked_accessible_task(session, task_id, user.id)
+    if (
+        "project_id" in payload.model_fields_set
+        and payload.project_id != task.project_id
+        and task.owner_id != user.id
+    ):
+        raise HTTPException(status_code=403, detail="Só o autor pode mudar o projeto da tarefa.")
     previous_project_id = task.project_id
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(task, field, value)
@@ -131,7 +131,7 @@ def update_task(task_id: TaskId, payload: TaskUpdate, session: DatabaseSession, 
                 task.status = "todo"
         record_task_activity(session, task, user, "task_added")
     session.commit()
-    return Task.model_validate(task)
+    return task_response(task, user.id)
 
 
 @router.patch("/{task_id}/assignment")
@@ -180,7 +180,7 @@ def update_task_completion(
 def delete_task(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> Response:
     statement = (
         delete(TaskRecord)
-        .where(TaskRecord.id == task_id, TaskRecord.owner_id == user.id)
+        .where(TaskRecord.id == task_id, task_access(user.id))
         .returning(TaskRecord.id)
     )
     if session.scalar(statement) is None:
