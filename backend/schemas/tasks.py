@@ -36,7 +36,14 @@ class TaskCreate(TaskUpdate):
     priority: TaskPriority = "Média"
 
 
+class TaskStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: TaskStatus
+
+
 class Task(TaskUpdate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    can_edit: bool = True

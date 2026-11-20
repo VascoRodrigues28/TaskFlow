@@ -10,6 +10,7 @@ type Props = {
   onSave: (input: ProjectInput, id?: string) => Promise<boolean>;
   onDelete: (project: Project) => void;
   onViewTasks: (id: string) => void;
+  onInvite: (id: string, email: string) => Promise<boolean>;
   onClearFeedback: () => void;
 };
 
@@ -17,8 +18,10 @@ const fieldStyle = "w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py
 const primaryButton = "inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-black hover:bg-emerald-400 disabled:opacity-50";
 const actionButton = "inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 hover:bg-white/5 disabled:opacity-50";
 
-export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTasks, onClearFeedback }: Props) {
+export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTasks, onInvite, onClearFeedback }: Props) {
   const [draft, setDraft] = useState<Project | ProjectInput | null>(null);
+  const [inviteProjectId, setInviteProjectId] = useState<string | null>(null);
+  const [inviteEmail, setInviteEmail] = useState("");
   const [validationError, setValidationError] = useState("");
   const editingId = draft && "id" in draft ? draft.id : undefined;
 
@@ -82,7 +85,7 @@ export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTask
         </form>
       ) : (
         <button
-          type="button" className={primaryButton} disabled={isSaving}
+          type="button" className={primaryButton} disabled={isSaving || inviteProjectId !== null}
           onClick={() => openForm({ name: "", description: "" })}
         >
           <Plus size={18} aria-hidden="true" />
@@ -102,26 +105,59 @@ export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTask
               <FolderKanban size={18} aria-hidden="true" className="shrink-0 text-emerald-400" />
               {project.name}
             </h3>
+            <p className="text-sm text-emerald-400">{project.role === "host" ? "Anfitrião" : "Membro"}</p>
             {project.description && <p className="whitespace-pre-wrap break-words text-sm text-zinc-400">{project.description}</p>}
             <div className="flex flex-wrap gap-2">
-              <button type="button" className={actionButton} disabled={isSaving || draft !== null} onClick={() => onViewTasks(project.id)}>
+              <button type="button" className={actionButton} disabled={isSaving || draft !== null || inviteProjectId !== null} onClick={() => onViewTasks(project.id)}>
                 Ver tarefas
               </button>
+              {project.role === "host" && <>
               <button
-                type="button" className={actionButton} disabled={isSaving || draft !== null}
+                type="button" className={actionButton} disabled={isSaving || draft !== null || inviteProjectId !== null}
                 aria-label={`Editar projeto ${project.name}`} onClick={() => openForm(project)}
               >
                 <Pencil size={15} aria-hidden="true" />
                 Editar
               </button>
               <button
-                type="button" className={actionButton} disabled={isSaving || draft !== null}
+                type="button" className={actionButton} disabled={isSaving || draft !== null || inviteProjectId !== null}
                 aria-label={`Eliminar projeto ${project.name}`} onClick={() => onDelete(project)}
               >
                 <Trash2 size={15} aria-hidden="true" />
                 Eliminar
               </button>
+              <button
+                type="button" className={actionButton} disabled={isSaving || draft !== null || inviteProjectId !== null}
+                onClick={() => {
+                  onClearFeedback();
+                  setInviteEmail("");
+                  setInviteProjectId(project.id);
+                }}
+              >
+                Convidar
+              </button>
+              </>}
             </div>
+            {inviteProjectId === project.id && (
+              <form
+                className="space-y-3 border-t border-white/10 pt-4"
+                onSubmit={async (event) => {
+                  event.preventDefault();
+                  if (await onInvite(project.id, inviteEmail.trim())) setInviteProjectId(null);
+                }}
+              >
+                <label htmlFor="project-invite-email" className="block text-sm text-zinc-300">Email da pessoa a convidar</label>
+                <input
+                  id="project-invite-email" type="email" required disabled={isSaving}
+                  value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} className={fieldStyle}
+                />
+                <p className="text-sm text-zinc-400">O convite aparece na aplicação quando a pessoa entra com esse email.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="submit" disabled={isSaving} className={primaryButton}>Enviar convite</button>
+                  <button type="button" disabled={isSaving} className={actionButton} onClick={() => setInviteProjectId(null)}>Cancelar</button>
+                </div>
+              </form>
+            )}
           </article>
         ))}
       </div>

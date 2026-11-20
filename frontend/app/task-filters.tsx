@@ -1,14 +1,12 @@
-import type { Project } from "@/lib/projects-api";
 import type { Task, TaskPriority, TaskStatus } from "@/lib/tasks-api";
 
 type Filters = {
   query: string;
-  project: string;
   priority: TaskPriority | "";
   status: TaskStatus | "";
 };
 
-export const defaultTaskFilters: Filters = { query: "", project: "all", priority: "", status: "" };
+export const defaultTaskFilters: Filters = { query: "", priority: "", status: "" };
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/\p{M}/gu, "").toLocaleLowerCase("pt-PT");
@@ -17,8 +15,7 @@ function normalize(value: string) {
 export function filterTasks(tasks: Task[], filters: Filters): Task[] {
   const query = normalize(filters.query.trim());
   return tasks.filter((task) =>
-    (filters.project === "all" || (task.project_id ?? "") === filters.project)
-    && (!filters.priority || task.priority === filters.priority)
+    (!filters.priority || task.priority === filters.priority)
     && (!filters.status || task.status === filters.status)
     && (!query || normalize(`${task.title} ${task.description}`).includes(query))
   );
@@ -27,7 +24,6 @@ export function filterTasks(tasks: Task[], filters: Filters): Task[] {
 type Props = {
   filters: Filters;
   onChange: (filters: Filters) => void;
-  projects: Project[];
   columns: readonly { id: TaskStatus; title: string }[];
   disabled: boolean;
 };
@@ -35,11 +31,11 @@ type Props = {
 const fieldStyle = "w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white disabled:opacity-50";
 const labelStyle = "mb-2 block text-sm text-zinc-300";
 
-export function TaskFilters({ filters, onChange, projects, columns, disabled }: Props) {
-  const hasFilters = filters.query !== "" || filters.project !== "all" || filters.priority !== "" || filters.status !== "";
+export function TaskFilters({ filters, onChange, columns, disabled }: Props) {
+  const hasFilters = filters.query !== "" || filters.priority !== "" || filters.status !== "";
 
   return (
-    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <div>
         <label htmlFor="task-search" className={labelStyle}>Pesquisar tarefas</label>
         <input
@@ -47,18 +43,6 @@ export function TaskFilters({ filters, onChange, projects, columns, disabled }: 
           onChange={(event) => onChange({ ...filters, query: event.target.value })}
           className={fieldStyle} placeholder="Título ou descrição"
         />
-      </div>
-      <div>
-        <label htmlFor="project-filter" className={labelStyle}>Filtrar por projeto</label>
-        <select
-          id="project-filter" value={filters.project} disabled={disabled}
-          onChange={(event) => onChange({ ...filters, project: event.target.value })}
-          className={fieldStyle}
-        >
-          <option value="all">Todos os projetos</option>
-          <option value="">Sem projeto</option>
-          {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
-        </select>
       </div>
       <div>
         <label htmlFor="priority-filter" className={labelStyle}>Filtrar por prioridade</label>
