@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowUpRight, Bell } from "lucide-react";
+import { ArrowUpRight, Bell, Trash2 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { localizeError, useLanguage } from "@/lib/language";
-import { listNotifications, markNotificationRead, type NotificationFeed, type TaskNotification } from "@/lib/notifications-api";
+import { deleteNotification, listNotifications, markNotificationRead, type NotificationFeed, type TaskNotification } from "@/lib/notifications-api";
 import { listInvitations, type Invitation } from "@/lib/projects-api";
 
 const action = {
@@ -89,6 +89,20 @@ export function NotificationCenter({
   }
 
   const unread = (feed?.unread_count ?? 0) + invitations.length;
+
+  function removeNotification(id: string) {
+    return run(async () => {
+      await deleteNotification(id);
+      setFeed((previous) => {
+        const item = previous?.items.find((notification) => notification.id === id);
+        if (!previous || !item) return previous;
+        return {
+          items: previous.items.filter((notification) => notification.id !== id),
+          unread_count: Math.max(0, previous.unread_count - Number(item.read_at === null)),
+        };
+      });
+    });
+  }
 
   return (
     <div className="relative" onKeyDown={(event) => {
@@ -176,15 +190,26 @@ export function NotificationCenter({
                     <ArrowUpRight size={16} aria-hidden="true" className="shrink-0 text-accent" />
                   </button>
                 ) : message}
-                {!notification.read_at && (
+                <div className="mt-2 flex flex-wrap items-center justify-end gap-3">
+                  {!notification.read_at && (
+                    <button
+                      type="button" disabled={pending}
+                      className="text-xs text-accent underline disabled:opacity-50"
+                      onClick={() => run(() => markNotificationRead(notification.id))}
+                    >
+                      {t("Marcar como lida", "Mark as read")}
+                    </button>
+                  )}
                   <button
                     type="button" disabled={pending}
-                    className="mt-2 text-xs text-accent underline disabled:opacity-50"
-                    onClick={() => run(() => markNotificationRead(notification.id))}
+                    title={t("Eliminar notificação", "Delete notification")}
+                    aria-label={t("Eliminar notificação", "Delete notification")}
+                    className="rounded-md p-1.5 text-muted hover:bg-red-500/10 hover:text-danger disabled:opacity-50"
+                    onClick={() => removeNotification(notification.id)}
                   >
-                    {t("Marcar como lida", "Mark as read")}
+                    <Trash2 size={16} aria-hidden="true" />
                   </button>
-                )}
+                </div>
               </li>
               );
             })}

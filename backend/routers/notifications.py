@@ -1,7 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from models import NotificationRecord
 from routers.auth import CurrentUser, DatabaseSession
@@ -33,6 +33,19 @@ def mark_notification_read(notification_id: UUID, session: DatabaseSession, user
         update(NotificationRecord)
         .where(NotificationRecord.id == notification_id, NotificationRecord.recipient_id == user.id)
         .values(read_at=func.coalesce(NotificationRecord.read_at, func.now()))
+        .returning(NotificationRecord.id)
+    )
+    if session.scalar(statement) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notificação não encontrada.")
+    session.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_notification(notification_id: UUID, session: DatabaseSession, user: CurrentUser) -> Response:
+    statement = (
+        delete(NotificationRecord)
+        .where(NotificationRecord.id == notification_id, NotificationRecord.recipient_id == user.id)
         .returning(NotificationRecord.id)
     )
     if session.scalar(statement) is None:
