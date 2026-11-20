@@ -33,6 +33,7 @@ import {
   type TaskPriority,
 } from "@/lib/tasks-api";
 import { AuthForm } from "./auth-form";
+import { ActivityCalendar } from "./activity-calendar";
 import { DashboardOverview } from "./dashboard-overview";
 import { NotificationCenter } from "./notification-center";
 import { ProjectsPanel } from "./projects-panel";
@@ -615,11 +616,14 @@ function Dashboard({
             )
           ) : section === "dashboard" ? (
           !isLoading && !loadError && (
-            <DashboardOverview
-              projects={projects}
-              tasks={tasks}
-              onViewTasks={viewProjectTasks}
-            />
+            <>
+              <DashboardOverview
+                projects={projects}
+                tasks={tasks}
+                onViewTasks={viewProjectTasks}
+              />
+              <ActivityCalendar onUnauthorized={onUnauthorized} />
+            </>
           )
           ) : (
           <>
