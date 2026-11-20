@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type User } from "@/lib/auth-api";
-import { listProjects, type Project } from "@/lib/projects-api";
+import { listProjects, removeProject, saveProject, type Project, type ProjectInput } from "@/lib/projects-api";
 import {
   listTasks,
   removeTask,
@@ -28,6 +28,7 @@ import {
   type TaskStatus,
 } from "@/lib/tasks-api";
 import { AuthForm } from "./auth-form";
+import { ProjectsPanel } from "./projects-panel";
 
 const columns = [
   {
@@ -128,6 +129,7 @@ function Dashboard({
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectFilter, setProjectFilter] = useState("all");
+  const [section, setSection] = useState<"dashboard" | "projects">("dashboard");
   const [isLoading, setIsLoading] = useState(true);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState("");
@@ -168,22 +170,52 @@ function Dashboard({
     useState<TaskPriority>("Média");
 
   async function runMutation(action: () => Promise<void>, success: string) {
-    if (isSaving) return;
+    if (isSaving) return false;
 
     setIsSaving(true);
     setFeedback(null);
     try {
       await action();
       setFeedback({ type: "success", text: success });
+      return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         onUnauthorized();
       } else {
         setFeedback({ type: "error", text: errorMessage(error) });
       }
+      return false;
     } finally {
       setIsSaving(false);
     }
+  }
+
+  function navigate(nextSection: typeof section) {
+    setFeedback(null);
+    setSection(nextSection);
+  }
+
+  function submitProject(input: ProjectInput, id?: string) {
+    return runMutation(async () => {
+      const saved = await saveProject(input, id);
+      setProjects((previous) => [
+        ...previous.filter((project) => project.id !== saved.id),
+        saved,
+      ].sort((left, right) => left.name.localeCompare(right.name, "pt-PT")));
+    }, id ? "Projeto atualizado." : "Projeto criado.");
+  }
+
+  function deleteProject(project: Project) {
+    if (!window.confirm(`Eliminar «${project.name}»? As tarefas associadas ficam sem projeto.`)) return;
+
+    return runMutation(async () => {
+      await removeProject(project.id);
+      setProjects((previous) => previous.filter((item) => item.id !== project.id));
+      setTasks((previous) => previous.map((task) =>
+        task.project_id === project.id ? { ...task, project_id: null } : task
+      ));
+      setProjectFilter((previous) => previous === project.id ? "" : previous);
+    }, "Projeto eliminado.");
   }
 
   function applyUpdatedTask(updated: Task) {
@@ -309,36 +341,45 @@ function Dashboard({
               {
                 name: "Dashboard",
                 icon: LayoutDashboard,
-                active: true,
+                target: "dashboard",
               },
               {
                 name: "Projetos",
                 icon: FolderKanban,
-                active: false,
+                target: "projects",
               },
               {
                 name: "Tarefas",
                 icon: ListTodo,
-                active: false,
               },
               {
                 name: "Definições",
                 icon: Settings,
-                active: false,
               },
             ].map((item) => {
               const Icon = item.icon;
+              const target = item.target === "dashboard" || item.target === "projects" ? item.target : undefined;
+              const active = target === section;
+              const style = `flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm ${
+                active ? "bg-emerald-500/10 text-emerald-400" : "text-zinc-400 hover:bg-white/5 hover:text-white"
+              }`;
+
+              if (target) {
+                return (
+                  <button
+                    key={item.name} type="button" className={style}
+                    aria-current={active ? "page" : undefined}
+                    disabled={isSaving} onClick={() => navigate(target)}
+                  >
+                    <Icon size={18} aria-hidden="true" />
+                    {item.name}
+                  </button>
+                );
+              }
 
               return (
-                <div
-                  key={item.name}
-                  className={`flex items-center gap-3 rounded-lg px-4 py-3 text-sm ${
-                    item.active
-                      ? "bg-emerald-500/10 text-emerald-400"
-                      : "text-zinc-400 hover:bg-white/5 hover:text-white"
-                  }`}
-                >
-                  <Icon size={18} />
+                <div key={item.name} className={style}>
+                  <Icon size={18} aria-hidden="true" />
                   {item.name}
                 </div>
               );
@@ -352,23 +393,39 @@ function Dashboard({
 
         {/* CONTEÚDO PRINCIPAL */}
         <main className="min-w-0 flex-1 p-6 md:p-10">
+          <nav aria-label="Secções" className="mb-6 flex gap-3 md:hidden">
+            <button
+              type="button" aria-current={section === "dashboard" ? "page" : undefined}
+              disabled={isSaving} onClick={() => navigate("dashboard")}
+              className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
+            >
+              Dashboard
+            </button>
+            <button
+              type="button" aria-current={section === "projects" ? "page" : undefined}
+              disabled={isSaving} onClick={() => navigate("projects")}
+              className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
+            >
+              Projetos
+            </button>
+          </nav>
 
           {/* HEADER */}
           <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
 
             <div>
               <p className="mb-2 text-sm text-zinc-500">
-                Workspace / Dashboard
+                Workspace / {section === "projects" ? "Projetos" : "Dashboard"}
               </p>
 
               <h2 className="text-3xl font-bold">
-                Dashboard
+                {section === "projects" ? "Projetos" : "Dashboard"}
               </h2>
 
-              <p className="mt-2 text-zinc-400">
+              {section === "dashboard" && <p className="mt-2 text-zinc-400">
                 Organiza os teus projetos e acompanha
                 as tarefas.
-              </p>
+              </p>}
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
@@ -381,7 +438,7 @@ function Dashboard({
               >
                 Terminar sessão
               </button>
-            <button
+            {section === "dashboard" && <button
   type="button"
   disabled={isLoading || Boolean(loadError) || isSaving}
   onClick={() => {
@@ -393,7 +450,7 @@ function Dashboard({
 >
   <Plus size={18} />
   Nova tarefa
-</button>
+</button>}
             </div>
 
           </div>
@@ -427,6 +484,22 @@ function Dashboard({
             </p>
           )}
 
+          {section === "projects" ? (
+            !isLoading && !loadError && (
+              <ProjectsPanel
+                projects={projects}
+                isSaving={isSaving}
+                onSave={submitProject}
+                onDelete={deleteProject}
+                onViewTasks={(id) => {
+                  setProjectFilter(id);
+                  navigate("dashboard");
+                }}
+                onClearFeedback={() => setFeedback(null)}
+              />
+            )
+          ) : (
+          <>
           <div className="mb-4 w-full max-w-xs">
             <label htmlFor="project-filter" className="mb-2 block text-sm text-zinc-300">Filtrar por projeto</label>
             <select
@@ -627,6 +700,8 @@ function Dashboard({
               );
             })}
           </div>
+          </>
+          )}
         </main>
       </div>
 
