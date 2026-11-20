@@ -4,6 +4,13 @@ import { priorityLabel, useLanguage } from "@/lib/language";
 
 const priorityOrder = { Alta: 0, Média: 1, Baixa: 2 };
 
+function compareDueDates(left: string | null, right: string | null) {
+  if (left === right) return 0;
+  if (left === null) return 1;
+  if (right === null) return -1;
+  return left.localeCompare(right);
+}
+
 export function DashboardOverview({
   projects, tasks, onViewTasks,
 }: {
@@ -22,12 +29,14 @@ export function DashboardOverview({
   }
 
   const upcoming = tasks
-    .filter((task): task is Task & { due_date: string } => task.status !== "done" && task.due_date !== null)
+    .filter((task) => task.status !== "done" && (task.due_date !== null || task.priority === "Alta"))
     .sort((left, right) =>
-      left.due_date.localeCompare(right.due_date)
+      Number(right.priority === "Alta") - Number(left.priority === "Alta")
+      || compareDueDates(left.due_date, right.due_date)
       || priorityOrder[left.priority] - priorityOrder[right.priority]
       || left.id - right.id
-    );
+    )
+    .slice(0, 5);
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
 
   return (
@@ -52,9 +61,9 @@ export function DashboardOverview({
         </ul>
       </section>
       <section aria-labelledby="upcoming-tasks-title">
-        <h3 id="upcoming-tasks-title" className="mb-4 text-xl font-semibold">{t("Tarefas com prazos mais próximos", "Tasks due soonest")}</h3>
+        <h3 id="upcoming-tasks-title" className="mb-4 text-xl font-semibold">{t("Tarefas com prazos próximos e de prioridade alta", "Tasks due soon and high-priority tasks")}</h3>
         {upcoming.length === 0 ? (
-          <p className="text-sm text-muted">{t("Sem tarefas pendentes com prazo definido.", "No pending tasks with a due date.")}</p>
+          <p className="text-sm text-muted">{t("Sem tarefas pendentes com prazo ou prioridade alta.", "No pending tasks with a due date or high priority.")}</p>
         ) : (
           <ol className="divide-y divide-line rounded-xl border border-line bg-panel">
             {upcoming.map((task) => (
@@ -65,7 +74,9 @@ export function DashboardOverview({
                 </div>
                 <div className="flex items-center gap-3 text-sm text-muted">
                   <span>{t("Prioridade", "Priority")} {priorityLabel(task.priority, language)}</span>
-                  <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
+                  {task.due_date ? (
+                    <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
+                  ) : <span>{t("Sem prazo definido", "No due date")}</span>}
                 </div>
               </li>
             ))}
