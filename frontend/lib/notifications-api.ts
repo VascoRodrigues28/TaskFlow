@@ -6,6 +6,8 @@ export type TaskNotification = {
   actor_email: string;
   project_name: string;
   task_title: string;
+  task_id: number | null;
+  project_id: string | null;
   created_at: string;
   read_at: string | null;
 };

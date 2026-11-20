@@ -14,6 +14,10 @@ export async function listProjects(signal: AbortSignal): Promise<Project[]> {
   return response.json();
 }
 
+export async function getProject(id: string): Promise<Project> {
+  return (await request(`/projects/${id}`)).json();
+}
+
 export async function saveProject(project: ProjectInput, id?: string): Promise<Project> {
   const response = await request(id ? `/projects/${id}` : "/projects", {
     method: id ? "PUT" : "POST",

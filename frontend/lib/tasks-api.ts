@@ -24,6 +24,10 @@ export async function listTasks(signal: AbortSignal): Promise<Task[]> {
   return response.json();
 }
 
+export async function getTask(id: number): Promise<Task> {
+  return (await request(`/tasks/${id}`)).json();
+}
+
 export async function saveTask(task: TaskInput, id?: number): Promise<Task> {
   const response = await request(id === undefined ? "/tasks" : `/tasks/${id}`, {
     method: id === undefined ? "POST" : "PUT",

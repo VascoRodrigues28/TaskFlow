@@ -15,6 +15,8 @@ class Notification(BaseModel):
     actor_email: str
     project_name: str
     task_title: str
+    task_id: int | None
+    project_id: UUID | None
     created_at: datetime
     read_at: datetime | None
 
