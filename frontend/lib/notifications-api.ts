@@ -21,3 +21,7 @@ export async function listNotifications(signal: AbortSignal): Promise<Notificati
 export async function markNotificationRead(id: string): Promise<void> {
   await request(`/notifications/${id}/read`, { method: "PUT" });
 }
+
+export async function deleteNotification(id: string): Promise<void> {
+  await request(`/notifications/${id}`, { method: "DELETE" });
+}

@@ -32,7 +32,8 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isInvitation = (method === "GET" && endpoint === "projects/invitations")
     || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
   const isNotification = (method === "GET" && endpoint === "notifications")
-    || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint));
+    || (method === "PUT" && new RegExp(`^notifications/${uuid}/read$`, "i").test(endpoint))
+    || (method === "DELETE" && new RegExp(`^notifications/${uuid}$`, "i").test(endpoint));
   const isActivity = method === "GET" && endpoint === "activity";
   const allowed = isLogin || isRegister || isLogout || isProfile || isCredentialChange
     || isTaskCollection || isTask || isTaskWorkflow || isProjectCollection || isProjectMembers
