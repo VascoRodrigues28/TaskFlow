@@ -35,3 +35,9 @@ class PendingInvitation(BaseModel):
     id: UUID
     project_id: UUID
     project_name: str
+
+
+class ProjectMember(BaseModel):
+    project_id: UUID
+    id: UUID
+    name: str

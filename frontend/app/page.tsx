@@ -20,18 +20,17 @@ import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type Profile, type User } from "@/lib/auth-api";
 import { LanguageContext, localizeError, priorityLabel, useLanguage } from "@/lib/language";
 import {
-  acceptInvitation, listProjects, removeProject, saveProject, sendInvitation,
-  type Project, type ProjectInput,
+  acceptInvitation, listProjectMembers, listProjects, removeProject, saveProject, sendInvitation,
+  type Project, type ProjectInput, type ProjectMember,
 } from "@/lib/projects-api";
 import {
   listTasks,
   removeTask,
   saveTask,
-  setTaskStatus,
+  updateTaskWorkflow,
   type Task,
   type TaskInput,
   type TaskPriority,
-  type TaskStatus,
 } from "@/lib/tasks-api";
 import { AuthForm } from "./auth-form";
 import { DashboardOverview } from "./dashboard-overview";
@@ -206,6 +205,8 @@ function Dashboard({
   const { t, language } = useLanguage();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
+  const [members, setMembers] = useState<ProjectMember[] | null>(null);
+  const [membersError, setMembersError] = useState("");
   const [filters, setFilters] = useState(defaultTaskFilters);
   const [section, setSection] = useState<Section>("dashboard");
   const [taskProjectId, setTaskProjectId] = useState<string | null>(null);
@@ -241,6 +242,42 @@ function Dashboard({
 
     return () => controller.abort();
   }, [loadAttempt, onUnauthorized]);
+
+  useEffect(() => {
+    if (section !== "tasks") return;
+    const controller = new AbortController();
+    let loading = false;
+
+    async function refreshMembers() {
+      if (loading) return;
+      loading = true;
+      try {
+        const result = await listProjectMembers(controller.signal);
+        if (!controller.signal.aborted) {
+          setMembers(result);
+          setMembersError("");
+        }
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        if (error instanceof ApiError && error.status === 401) {
+          onUnauthorized();
+        } else {
+          setMembersError(errorMessage(error));
+        }
+      } finally {
+        loading = false;
+      }
+    }
+
+    void refreshMembers();
+    const timer = window.setInterval(refreshMembers, 15_000);
+    window.addEventListener("focus", refreshMembers);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshMembers);
+    };
+  }, [section, taskProjectId, onUnauthorized]);
 
   // Estado do formulário
   const [showModal, setShowModal] = useState(false);
@@ -315,7 +352,12 @@ function Dashboard({
       setProjects((previous) => previous.filter((item) => item.id !== project.id));
       setTasks((previous) => previous
         .filter((task) => task.project_id !== project.id || task.can_edit)
-        .map((task) => task.project_id === project.id ? { ...task, project_id: null } : task));
+        .map((task) => {
+          if (task.project_id !== project.id) return task;
+          const assignee_id = task.assignee_id === user.id ? user.id : null;
+          const status = task.status === "progress" && !assignee_id ? "todo" : task.status;
+          return { ...task, project_id: null, assignee_id, status };
+        }));
     }, t("Projeto eliminado.", "Project deleted."));
   }
 
@@ -335,7 +377,6 @@ function Dashboard({
       title: title.trim(),
       description: description.trim(),
       priority,
-      status: existing?.status ?? "todo",
       project_id: projectId || null,
       due_date: dueDate || null,
     } satisfies TaskInput;
@@ -351,11 +392,11 @@ function Dashboard({
     }, existing ? t("Alterações guardadas.", "Changes saved.") : t("Tarefa criada.", "Task created."));
   }
 
-  function updateTaskStatus(id: number, status: TaskStatus) {
+  function changeTaskWorkflow(id: number, change: Parameters<typeof updateTaskWorkflow>[1]) {
     return runMutation(async () => {
-      const updated = await setTaskStatus(id, status);
+      const updated = await updateTaskWorkflow(id, change);
       applyUpdatedTask(updated);
-    }, t("Estado atualizado.", "Status updated."));
+    }, t("Tarefa atualizada.", "Task updated."));
   }
 
   function editTask(task: Task) {
@@ -390,6 +431,12 @@ function Dashboard({
   }
 
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
+  const membersByProject = new Map<string, ProjectMember[]>();
+  for (const member of members ?? []) {
+    const participants = membersByProject.get(member.project_id);
+    if (participants) participants.push(member);
+    else membersByProject.set(member.project_id, [member]);
+  }
   const currentSection = sections.find((item) => item.id === section)!;
   const sectionTitle = t(currentSection.title, currentSection.englishTitle);
   const taskProjectName = taskProjectId === null ? undefined : projectNames.get(taskProjectId);
@@ -492,7 +539,7 @@ function Dashboard({
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <span className="break-all text-sm text-muted">{user.display_name || user.email}</span>
+              {user.display_name && <span className="break-all text-sm text-muted">{user.display_name}</span>}
               <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
               <button
                 type="button"
@@ -620,8 +667,9 @@ function Dashboard({
             </h3>
 
             <p className="mt-1 text-sm text-subtle">
-              {t("Acompanha o estado de cada tarefa.", "Track the status of each task.")}
+              {t("Cada pessoa pode ter até cinco tarefas em progresso.", "Each person can have up to five tasks in progress.")}
             </p>
+            {membersError && <p role="alert" className="mt-2 text-sm text-danger">{localizeError(membersError, language)}</p>}
           </div>
 
           {/* KANBAN */}
@@ -665,7 +713,11 @@ function Dashboard({
                       <p className="text-sm text-muted">{t("Sem tarefas nesta coluna.", "No tasks in this column.")}</p>
                     )}
 
-                    {columnTasks.map((task) => (
+                    {columnTasks.map((task) => {
+                      const participants = task.project_id
+                        ? membersByProject.get(task.project_id) ?? []
+                        : [{ id: user.id, name: user.display_name || t("Eu", "Me") }];
+                      return (
                       <div
                         key={task.id}
                         className="rounded-lg border border-line bg-field p-4"
@@ -728,29 +780,33 @@ function Dashboard({
                         </p>
 
 
-<div className="mb-4">
-  <label
-    htmlFor={`status-${task.id}`}
-    className="mb-2 block text-xs text-subtle"
-  >
-    {t("Estado", "Status")}
-  </label>
-
-  <select
-    id={`status-${task.id}`}
-    value={task.status}
-    disabled={isSaving}
-    onChange={(e) =>
-      updateTaskStatus(
-        task.id,
-        e.target.value as TaskStatus
-      )
-    }
-    className="w-full rounded-lg border border-line bg-field px-3 py-2 text-xs text-foreground outline-none focus:border-emerald-500"
-  >
-    {localizedColumns.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}
-  </select>
-</div>
+                        <div className="mb-4 space-y-3">
+                          <div>
+                            <label htmlFor={`assignee-${task.id}`} className="mb-2 block text-xs text-subtle">
+                              {t("Responsável", "Assignee")}
+                            </label>
+                            <select
+                              id={`assignee-${task.id}`} value={task.assignee_id ?? ""}
+                              disabled={isSaving || isLoading || Boolean(task.project_id && (!members || membersError))}
+                              onChange={(event) => changeTaskWorkflow(task.id, { assignee_id: event.target.value || null })}
+                              className="w-full rounded-lg border border-line bg-field px-3 py-2 text-xs text-foreground outline-none focus:border-emerald-500 disabled:opacity-50"
+                            >
+                              <option value="">{t("Sem responsável", "Unassigned")}</option>
+                              {task.assignee_id && !participants.some((person) => person.id === task.assignee_id) && (
+                                <option value={task.assignee_id}>{t("Responsável atual", "Current assignee")}</option>
+                              )}
+                              {participants.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+                            </select>
+                          </div>
+                          <label className="flex w-fit items-center gap-2 text-sm text-muted">
+                            <input
+                              type="checkbox" checked={task.status === "done"} disabled={isSaving || isLoading}
+                              onChange={(event) => changeTaskWorkflow(task.id, { completed: event.target.checked })}
+                              className="size-4 accent-emerald-500"
+                            />
+                            {t("Concluída", "Completed")}
+                          </label>
+                        </div>
 
                         <div className="flex items-center gap-2 border-t border-line pt-3 text-xs text-subtle">
                           <CalendarDays size={14} />
@@ -762,7 +818,8 @@ function Dashboard({
                         </div>
 
                       </div>
-                    ))}
+                      );
+                    })}
 
                   </div>
                 </div>

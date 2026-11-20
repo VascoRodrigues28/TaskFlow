@@ -1,12 +1,12 @@
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Response, status
-from sqlalchemy import delete, or_, select, update
+from sqlalchemy import case, or_, select, union, update
 from sqlalchemy.dialects.postgresql import insert
 
-from models import ProjectInvitationRecord, ProjectRecord, UserRecord
+from models import ProjectInvitationRecord, ProjectRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
-from schemas.projects import InviteToProject, PendingInvitation, Project, ProjectCreate, ProjectUpdate
+from schemas.projects import InviteToProject, PendingInvitation, Project, ProjectCreate, ProjectMember, ProjectUpdate
 
 router = APIRouter(prefix="/projects", tags=["Projetos"])
 
@@ -50,6 +50,30 @@ def list_invitations(session: DatabaseSession, user: CurrentUser) -> list[Pendin
     return [
         PendingInvitation(id=invitation_id, project_id=project_id, project_name=name)
         for invitation_id, project_id, name in session.execute(statement)
+    ]
+
+
+@router.get("/members")
+def list_project_members(session: DatabaseSession, user: CurrentUser) -> list[ProjectMember]:
+    projects = (
+        select(ProjectRecord.id, ProjectRecord.owner_id)
+        .where(project_access(user.id))
+        .cte("accessible_projects")
+    )
+    participants = union(
+        select(projects.c.id.label("project_id"), projects.c.owner_id.label("user_id")),
+        select(ProjectInvitationRecord.project_id, ProjectInvitationRecord.member_id)
+        .join(projects, projects.c.id == ProjectInvitationRecord.project_id)
+        .where(ProjectInvitationRecord.member_id.is_not(None)),
+    ).subquery()
+    statement = (
+        select(participants.c.project_id, UserRecord)
+        .join(UserRecord, UserRecord.id == participants.c.user_id)
+        .order_by(UserRecord.display_name, UserRecord.email)
+    )
+    return [
+        ProjectMember(project_id=project_id, id=member.id, name=member.display_name or member.email)
+        for project_id, member in session.execute(statement)
     ]
 
 
@@ -134,12 +158,20 @@ def update_project(
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_project(project_id: UUID, session: DatabaseSession, user: CurrentUser) -> Response:
-    statement = (
-        delete(ProjectRecord)
+    project = session.scalar(
+        select(ProjectRecord)
         .where(ProjectRecord.id == project_id, ProjectRecord.owner_id == user.id)
-        .returning(ProjectRecord.id)
+        .with_for_update()
     )
-    if session.scalar(statement) is None:
+    if project is None:
         raise project_not_found()
+    different_owner = TaskRecord.assignee_id.is_distinct_from(TaskRecord.owner_id)
+    session.execute(
+        update(TaskRecord).where(TaskRecord.project_id == project_id).values(
+            assignee_id=case((different_owner, None), else_=TaskRecord.assignee_id),
+            status=case((different_owner & (TaskRecord.status == "progress"), "todo"), else_=TaskRecord.status),
+        )
+    )
+    session.delete(project)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
