@@ -28,6 +28,11 @@ class UserRecord(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     email: Mapped[str] = mapped_column(Text, unique=True)
     password_hash: Mapped[str] = mapped_column(Text)
+    display_name: Mapped[str] = mapped_column(Text, server_default="")
+    bio: Mapped[str] = mapped_column(Text, server_default="")
+    theme: Mapped[str] = mapped_column(Text, server_default="dark")
+    language: Mapped[str] = mapped_column(Text, server_default="pt")
+    token_version: Mapped[int] = mapped_column(server_default="0")
 
 
 class ProjectRecord(Base):

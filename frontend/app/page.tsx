@@ -17,7 +17,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
-import { getProfile, logout, type User } from "@/lib/auth-api";
+import { getProfile, logout, type Profile, type User } from "@/lib/auth-api";
+import { LanguageContext, localizeError, priorityLabel, useLanguage } from "@/lib/language";
 import {
   acceptInvitation, listProjects, removeProject, saveProject, sendInvitation,
   type Project, type ProjectInput,
@@ -36,29 +37,34 @@ import { AuthForm } from "./auth-form";
 import { DashboardOverview } from "./dashboard-overview";
 import { NotificationCenter } from "./notification-center";
 import { ProjectsPanel } from "./projects-panel";
+import { SettingsPanel } from "./settings-panel";
 import { defaultTaskFilters, filterTasks, TaskFilters } from "./task-filters";
 
 const sections = [
-  { id: "dashboard", title: "Dashboard", icon: LayoutDashboard },
-  { id: "projects", title: "Projetos", icon: FolderKanban },
-  { id: "tasks", title: "Tarefas", icon: ListTodo },
+  { id: "dashboard", title: "Dashboard", englishTitle: "Dashboard", icon: LayoutDashboard },
+  { id: "projects", title: "Projetos", englishTitle: "Projects", icon: FolderKanban },
+  { id: "tasks", title: "Tarefas", englishTitle: "Tasks", icon: ListTodo },
+  { id: "settings", title: "Definições", englishTitle: "Settings", icon: Settings },
 ] as const;
 type Section = (typeof sections)[number]["id"];
 
 const columns = [
   {
     id: "todo",
-    title: "To Do",
+    title: "Por fazer",
+    englishTitle: "To Do",
     icon: Circle,
   },
   {
     id: "progress",
-    title: "In Progress",
+    title: "Em progresso",
+    englishTitle: "In Progress",
     icon: Clock3,
   },
   {
     id: "done",
-    title: "Done",
+    title: "Concluídas",
+    englishTitle: "Done",
     icon: CheckCircle2,
   },
 ] as const;
@@ -69,7 +75,49 @@ type Session =
   | { state: "signed-out"; notice?: string }
   | { state: "signed-in"; user: User };
 
+type Appearance = Pick<Profile, "theme" | "language">;
+
+const defaultAppearance: Appearance = { theme: "dark", language: "pt" };
+const appearanceKey = "taskflow-appearance";
+
+function readAppearance(): Appearance {
+  try {
+    const saved = JSON.parse(localStorage.getItem(appearanceKey) ?? "null");
+    return {
+      theme: saved?.theme === "light" || saved?.theme === "system" ? saved.theme : "dark",
+      language: saved?.language === "en" ? "en" : "pt",
+    };
+  } catch {
+    return defaultAppearance;
+  }
+}
+
 export default function Home() {
+  const [preferences, setPreferences] = useState(defaultAppearance);
+
+  const applyAppearance = useCallback(({ theme, language }: Appearance) => {
+    setPreferences({ theme, language });
+    try {
+      localStorage.setItem(appearanceKey, JSON.stringify({ theme, language }));
+    } catch {
+      // The account still supplies preferences when browser storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = preferences.theme;
+    document.documentElement.lang = preferences.language === "pt" ? "pt-PT" : "en";
+  }, [preferences.theme, preferences.language]);
+
+  return (
+    <LanguageContext.Provider value={preferences.language}>
+      <SessionView onPreferences={applyAppearance} />
+    </LanguageContext.Provider>
+  );
+}
+
+function SessionView({ onPreferences }: { onPreferences: (preferences: Appearance) => void }) {
+  const { t, language } = useLanguage();
   const [session, setSession] = useState<Session>({ state: "loading" });
   const [sessionAttempt, setSessionAttempt] = useState(0);
 
@@ -77,18 +125,21 @@ export default function Home() {
     const controller = new AbortController();
     getProfile(controller.signal)
       .then((user) => {
-        if (!controller.signal.aborted) setSession({ state: "signed-in", user });
+        if (controller.signal.aborted) return;
+        onPreferences(user);
+        setSession({ state: "signed-in", user });
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) return;
         if (error instanceof ApiError && error.status === 401) {
+          onPreferences(readAppearance());
           setSession({ state: "signed-out" });
         } else {
           setSession({ state: "error", message: errorMessage(error) });
         }
       });
     return () => controller.abort();
-  }, [sessionAttempt]);
+  }, [sessionAttempt, onPreferences]);
 
   function checkSession() {
     setSession({ state: "loading" });
@@ -100,7 +151,7 @@ export default function Home() {
   }, []);
 
   if (session.state === "signed-out") {
-    return <AuthForm notice={session.notice} onLogin={checkSession} />;
+    return <AuthForm notice={session.notice ? localizeError(session.notice, language) : undefined} onLogin={checkSession} />;
   }
   if (session.state === "signed-in") {
     return (
@@ -108,6 +159,13 @@ export default function Home() {
         key={session.user.id}
         user={session.user}
         onUnauthorized={sessionExpired}
+        onProfile={(user) => {
+          onPreferences(user);
+          setSession({ state: "signed-in", user });
+        }}
+        onCredentialsChanged={() => {
+          setSession({ state: "signed-out", notice: "Credenciais atualizadas. Inicia sessão novamente." });
+        }}
         onLogout={async () => {
           await logout();
           setSession({ state: "signed-out" });
@@ -117,14 +175,14 @@ export default function Home() {
   }
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#09090b] p-6 text-white">
+    <main className="grid min-h-screen place-items-center bg-background p-6 text-foreground">
       {session.state === "loading" ? (
-        <p role="status">A verificar a sessão…</p>
+        <p role="status">{t("A verificar a sessão…", "Checking your session…")}</p>
       ) : (
         <div className="space-y-4">
-          <p role="alert" className="text-red-400">{session.message}</p>
-          <button type="button" onClick={checkSession} className="text-emerald-400 underline">
-            Tentar novamente
+          <p role="alert" className="text-danger">{localizeError(session.message, language)}</p>
+          <button type="button" onClick={checkSession} className="text-accent underline">
+            {t("Tentar novamente", "Try again")}
           </button>
         </div>
       )}
@@ -136,11 +194,16 @@ function Dashboard({
   user,
   onUnauthorized,
   onLogout,
+  onProfile,
+  onCredentialsChanged,
 }: {
   user: User;
   onUnauthorized: () => void;
   onLogout: () => Promise<void>;
+  onProfile: (user: User) => void;
+  onCredentialsChanged: () => void;
 }) {
+  const { t, language } = useLanguage();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [filters, setFilters] = useState(defaultTaskFilters);
@@ -229,7 +292,7 @@ function Dashboard({
         ...previous.filter((project) => project.id !== saved.id),
         saved,
       ].sort((left, right) => left.name.localeCompare(right.name, "pt-PT")));
-    }, id ? "Projeto atualizado." : "Projeto criado.");
+    }, id ? t("Projeto atualizado.", "Project updated.") : t("Projeto criado.", "Project created."));
   }
 
   function joinProject(id: string) {
@@ -238,11 +301,14 @@ function Dashboard({
       setLoadError("");
       setIsLoading(true);
       setLoadAttempt((attempt) => attempt + 1);
-    }, "Convite aceite.");
+    }, t("Convite aceite.", "Invitation accepted."));
   }
 
   function deleteProject(project: Project) {
-    if (!window.confirm(`Eliminar «${project.name}»? As tarefas associadas ficam sem projeto.`)) return;
+    if (!window.confirm(t(
+      `Eliminar «${project.name}»? As tarefas associadas ficam sem projeto.`,
+      `Delete “${project.name}”? Its tasks will no longer be assigned to this project.`,
+    ))) return;
 
     return runMutation(async () => {
       await removeProject(project.id);
@@ -250,7 +316,7 @@ function Dashboard({
       setTasks((previous) => previous
         .filter((task) => task.project_id !== project.id || task.can_edit)
         .map((task) => task.project_id === project.id ? { ...task, project_id: null } : task));
-    }, "Projeto eliminado.");
+    }, t("Projeto eliminado.", "Project deleted."));
   }
 
   function applyUpdatedTask(updated: Task) {
@@ -260,7 +326,7 @@ function Dashboard({
   function submitTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!title.trim()) {
-      setFeedback({ type: "error", text: "Introduz um título para a tarefa." });
+      setFeedback({ type: "error", text: t("Introduz um título para a tarefa.", "Enter a task title.") });
       return;
     }
 
@@ -282,14 +348,14 @@ function Dashboard({
         setTasks((previous) => [...previous, saved]);
       }
       closeModal();
-    }, existing ? "Alterações guardadas." : "Tarefa criada.");
+    }, existing ? t("Alterações guardadas.", "Changes saved.") : t("Tarefa criada.", "Task created."));
   }
 
   function updateTaskStatus(id: number, status: TaskStatus) {
     return runMutation(async () => {
       const updated = await setTaskStatus(id, status);
       applyUpdatedTask(updated);
-    }, "Estado atualizado.");
+    }, t("Estado atualizado.", "Status updated."));
   }
 
   function editTask(task: Task) {
@@ -304,12 +370,12 @@ function Dashboard({
   }
 
   function deleteTask(taskId: number) {
-    if (!window.confirm("Tens a certeza de que queres eliminar esta tarefa?")) return;
+    if (!window.confirm(t("Tens a certeza de que queres eliminar esta tarefa?", "Delete this task?"))) return;
 
     return runMutation(async () => {
       await removeTask(taskId);
       setTasks((previous) => previous.filter((task) => task.id !== taskId));
-    }, "Tarefa eliminada.");
+    }, t("Tarefa eliminada.", "Task deleted."));
   }
 
   function closeModal() {
@@ -324,34 +390,36 @@ function Dashboard({
   }
 
   const projectNames = new Map(projects.map((project) => [project.id, project.name]));
-  const sectionTitle = sections.find((item) => item.id === section)?.title;
+  const currentSection = sections.find((item) => item.id === section)!;
+  const sectionTitle = t(currentSection.title, currentSection.englishTitle);
   const taskProjectName = taskProjectId === null ? undefined : projectNames.get(taskProjectId);
   const sectionTasks = taskProjectId === null ? tasks : tasks.filter((task) => task.project_id === taskProjectId);
   const visibleTasks = filterTasks(sectionTasks, filters);
+  const localizedColumns = columns.map((column) => ({ ...column, title: t(column.title, column.englishTitle) }));
 
   // Estatísticas
   const stats = [
     {
-      title: "Total de tarefas",
+      title: t("Total de tarefas", "Total tasks"),
       value: visibleTasks.length,
       icon: ListTodo,
     },
     {
-      title: "Por fazer",
+      title: t("Por fazer", "To do"),
       value: visibleTasks.filter(
         (task) => task.status === "todo"
       ).length,
       icon: Circle,
     },
     {
-      title: "Em progresso",
+      title: t("Em progresso", "In progress"),
       value: visibleTasks.filter(
         (task) => task.status === "progress"
       ).length,
       icon: Clock3,
     },
     {
-      title: "Concluídas",
+      title: t("Concluídas", "Completed"),
       value: visibleTasks.filter(
         (task) => task.status === "done"
       ).length,
@@ -360,52 +428,48 @@ function Dashboard({
   ];
 
   return (
-    <div className="min-h-screen bg-[#09090b] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
 
         {/* SIDEBAR */}
-        <aside className="hidden w-64 flex-col border-r border-white/10 bg-[#111113] p-6 md:flex">
+        <aside className="hidden w-64 flex-col border-r border-line bg-panel p-6 md:flex">
 
           <h1 className="mb-12 text-2xl font-bold">
             Task
-            <span className="text-emerald-400">
+            <span className="text-accent">
               Flow.
             </span>
           </h1>
 
           <nav className="space-y-2">
-            {sections.map(({ id, title, icon: Icon }) => (
+            {sections.map(({ id, title, englishTitle, icon: Icon }) => (
               <button
                 key={id} type="button"
                 aria-current={section === id ? "page" : undefined}
                 disabled={isSaving} onClick={() => navigate(id)}
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-zinc-400 hover:bg-white/5 hover:text-white aria-[current=page]:bg-emerald-500/10 aria-[current=page]:text-emerald-400"
+                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-muted hover:bg-tint hover:text-foreground aria-[current=page]:bg-emerald-500/10 aria-[current=page]:text-accent"
               >
                 <Icon size={18} aria-hidden="true" />
-                {title}
+                {t(title, englishTitle)}
               </button>
             ))}
-            <div className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-sm text-zinc-400">
-              <Settings size={18} aria-hidden="true" />
-              Definições
-            </div>
           </nav>
 
-          <div className="mt-auto border-t border-white/10 pt-6 text-sm text-zinc-500">
+          <div className="mt-auto border-t border-line pt-6 text-sm text-subtle">
             TaskFlow v1.0
           </div>
         </aside>
 
         {/* CONTEÚDO PRINCIPAL */}
         <main className="min-w-0 flex-1 p-6 md:p-10">
-          <nav aria-label="Secções" className="mb-6 flex flex-wrap gap-3 md:hidden">
-            {sections.map(({ id, title }) => (
+          <nav aria-label={t("Secções", "Sections")} className="mb-6 flex flex-wrap gap-3 md:hidden">
+            {sections.map(({ id, title, englishTitle }) => (
               <button
                 key={id} type="button" aria-current={section === id ? "page" : undefined}
                 disabled={isSaving} onClick={() => navigate(id)}
-                className="rounded-lg border border-white/10 px-3 py-2 text-sm aria-[current=page]:text-emerald-400"
+                className="rounded-lg border border-line px-3 py-2 text-sm aria-[current=page]:text-accent"
               >
-                {title}
+                {t(title, englishTitle)}
               </button>
             ))}
           </nav>
@@ -414,30 +478,29 @@ function Dashboard({
           <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
 
             <div>
-              <p className="mb-2 text-sm text-zinc-500">
-                Workspace / {sectionTitle}
+              <p className="mb-2 text-sm text-subtle">
+                {t("Área de trabalho", "Workspace")} / {sectionTitle}
               </p>
 
               <h2 className="text-3xl font-bold">
-                {taskProjectName ? `Tarefas de ${taskProjectName}` : sectionTitle}
+                {taskProjectName ? t(`Tarefas de ${taskProjectName}`, `Tasks for ${taskProjectName}`) : sectionTitle}
               </h2>
 
-              {section === "dashboard" && <p className="mt-2 text-zinc-400">
-                Organiza os teus projetos e acompanha
-                as tarefas.
+              {section === "dashboard" && <p className="mt-2 text-muted">
+                {t("Organiza os teus projetos e acompanha as tarefas.", "Organise your projects and track your tasks.")}
               </p>}
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
-              <span className="break-all text-sm text-zinc-400">{user.email}</span>
+              <span className="break-all text-sm text-muted">{user.display_name || user.email}</span>
               <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
               <button
                 type="button"
                 disabled={isSaving}
-                onClick={() => runMutation(onLogout, "Sessão terminada.")}
-                className="rounded-lg border border-white/20 px-3 py-2 text-sm hover:bg-white/5 disabled:opacity-50"
+                onClick={() => runMutation(onLogout, t("Sessão terminada.", "Signed out."))}
+                className="rounded-lg border border-line-strong px-3 py-2 text-sm hover:bg-tint disabled:opacity-50"
               >
-                Terminar sessão
+                {t("Terminar sessão", "Sign out")}
               </button>
             {section === "tasks" && <button
   type="button"
@@ -450,49 +513,54 @@ function Dashboard({
   className="flex items-center gap-2 rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
 >
   <Plus size={18} />
-  Nova tarefa
+  {t("Nova tarefa", "New task")}
 </button>}
             </div>
 
           </div>
 
-          {isLoading && <p role="status" className="mb-6 text-zinc-300">A carregar tarefas e projetos…</p>}
+          {isLoading && <p role="status" className="mb-6 text-muted">{t("A carregar tarefas e projetos…", "Loading tasks and projects…")}</p>}
           {loadError && (
             <div className="mb-6 flex flex-wrap items-center gap-4">
-              <p role="alert" className="text-red-400">{loadError}</p>
+              <p role="alert" className="text-danger">{localizeError(loadError, language)}</p>
               <button
                 type="button"
-                className="rounded-lg border border-white/20 px-3 py-2 text-sm"
+                className="rounded-lg border border-line-strong px-3 py-2 text-sm"
                 onClick={() => {
                   setLoadError("");
                   setIsLoading(true);
                   setLoadAttempt((attempt) => attempt + 1);
                 }}
               >
-                Tentar novamente
+                {t("Tentar novamente", "Try again")}
               </button>
             </div>
           )}
           {!showModal && isSaving && (
-            <p role="status" className="mb-6 text-zinc-300">A guardar alterações…</p>
+            <p role="status" className="mb-6 text-muted">{t("A guardar alterações…", "Saving changes…")}</p>
           )}
           {!showModal && feedback && (
             <p
               role={feedback.type === "error" ? "alert" : "status"}
-              className={feedback.type === "error" ? "mb-6 text-red-400" : "mb-6 text-emerald-400"}
+              className={feedback.type === "error" ? "mb-6 text-danger" : "mb-6 text-accent"}
             >
-              {feedback.text}
+              {localizeError(feedback.text, language)}
             </p>
           )}
 
-          {section === "projects" ? (
+          {section === "settings" ? (
+            <SettingsPanel
+              user={user} onProfile={onProfile} onCredentialsChanged={onCredentialsChanged}
+              onUnauthorized={onUnauthorized} onBusy={setIsSaving}
+            />
+          ) : section === "projects" ? (
             !isLoading && !loadError && (
               <ProjectsPanel
                 projects={projects}
                 isSaving={isSaving}
                 onSave={submitProject}
                 onDelete={deleteProject}
-                onInvite={(id, email) => runMutation(() => sendInvitation(id, email), "Convite criado.")}
+                onInvite={(id, email) => runMutation(() => sendInvitation(id, email), t("Convite criado.", "Invitation sent."))}
                 onViewTasks={viewProjectTasks}
                 onClearFeedback={() => setFeedback(null)}
               />
@@ -510,7 +578,7 @@ function Dashboard({
           <TaskFilters
             filters={filters}
             onChange={setFilters}
-            columns={columns}
+            columns={localizedColumns}
             disabled={isLoading || Boolean(loadError) || isSaving}
           />
 
@@ -523,17 +591,17 @@ function Dashboard({
               return (
                 <div
                   key={stat.title}
-                  className="rounded-xl border border-white/10 bg-zinc-900/50 p-6"
+                  className="rounded-xl border border-line bg-panel p-6"
                 >
                   <div className="mb-5 flex items-center justify-between">
 
-                    <span className="text-sm text-zinc-400">
+                    <span className="text-sm text-muted">
                       {stat.title}
                     </span>
 
                     <Icon
                       size={20}
-                      className="text-emerald-400"
+                      className="text-accent"
                     />
                   </div>
 
@@ -548,18 +616,18 @@ function Dashboard({
           {/* TÍTULO DO KANBAN */}
           <div className="mb-6">
             <h3 className="text-xl font-semibold">
-              Quadro de tarefas
+              {t("Quadro de tarefas", "Task board")}
             </h3>
 
-            <p className="mt-1 text-sm text-zinc-500">
-              Acompanha o estado de cada tarefa.
+            <p className="mt-1 text-sm text-subtle">
+              {t("Acompanha o estado de cada tarefa.", "Track the status of each task.")}
             </p>
           </div>
 
           {/* KANBAN */}
           <div className="grid gap-5 lg:grid-cols-3">
 
-            {columns.map((column) => {
+            {localizedColumns.map((column) => {
               const Icon = column.icon;
 
               const columnTasks = visibleTasks.filter(
@@ -569,7 +637,7 @@ function Dashboard({
               return (
                 <div
                   key={column.id}
-                  className="min-h-80 rounded-xl border border-white/10 bg-[#111113] p-5"
+                  className="min-h-80 rounded-xl border border-line bg-panel p-5"
                 >
 
                   {/* CABEÇALHO DA COLUNA */}
@@ -578,7 +646,7 @@ function Dashboard({
                     <div className="flex items-center gap-2">
                       <Icon
                         size={18}
-                        className="text-emerald-400"
+                        className="text-accent"
                       />
 
                       <h4 className="font-semibold">
@@ -586,7 +654,7 @@ function Dashboard({
                       </h4>
                     </div>
 
-                    <span className="rounded-md bg-white/5 px-2 py-1 text-xs text-zinc-400">
+                    <span className="rounded-md bg-tint px-2 py-1 text-xs text-muted">
                       {isLoading || loadError ? "—" : columnTasks.length}
                     </span>
                   </div>
@@ -594,31 +662,31 @@ function Dashboard({
                   {/* TAREFAS */}
                   <div className="space-y-3">
                     {!isLoading && !loadError && columnTasks.length === 0 && (
-                      <p className="text-sm text-zinc-400">Sem tarefas nesta coluna.</p>
+                      <p className="text-sm text-muted">{t("Sem tarefas nesta coluna.", "No tasks in this column.")}</p>
                     )}
 
                     {columnTasks.map((task) => (
                       <div
                         key={task.id}
-                        className="rounded-lg border border-white/10 bg-zinc-900 p-4"
+                        className="rounded-lg border border-line bg-field p-4"
                       >
 
                         <div className="mb-3 flex items-center justify-between">
 
-                          <span className="text-xs text-emerald-400">
+                          <span className="text-xs text-accent">
                             TASK-{task.id}
                           </span>
 
                           <span
                             className={`rounded-md px-2 py-1 text-xs ${
                               task.priority === "Alta"
-                                ? "bg-red-500/10 text-red-400"
+                                ? "bg-red-500/10 text-danger"
                                 : task.priority === "Média"
-                                ? "bg-yellow-500/10 text-yellow-400"
-                                : "bg-green-500/10 text-green-400"
+                                ? "bg-yellow-500/10 text-warning"
+                                : "bg-green-500/10 text-positive"
                             }`}
                           >
-                            {task.priority}
+                            {priorityLabel(task.priority, language)}
                           </span>
                         </div>
 
@@ -627,7 +695,7 @@ function Dashboard({
                         </h5>
 
                         {task.project_id && projectNames.has(task.project_id) && (
-                          <p className="mb-2 break-words text-xs text-zinc-400">{projectNames.get(task.project_id)}</p>
+                          <p className="mb-2 break-words text-xs text-muted">{projectNames.get(task.project_id)}</p>
                         )}
 
 {task.can_edit && <div className="mb-3 flex justify-end gap-2">
@@ -635,9 +703,9 @@ function Dashboard({
     type="button"
     onClick={() => editTask(task)}
     disabled={isSaving}
-    title="Editar tarefa"
-    aria-label={`Editar ${task.title}`}
-    className="rounded-md p-2 text-zinc-400 transition hover:bg-white/10 hover:text-emerald-400"
+    title={t("Editar tarefa", "Edit task")}
+    aria-label={t(`Editar ${task.title}`, `Edit ${task.title}`)}
+    className="rounded-md p-2 text-muted transition hover:bg-tint hover:text-accent"
   >
     <Pencil size={15} />
   </button>
@@ -646,16 +714,16 @@ function Dashboard({
     type="button"
     onClick={() => deleteTask(task.id)}
     disabled={isSaving}
-    title="Eliminar tarefa"
-    aria-label={`Eliminar ${task.title}`}
-    className="rounded-md p-2 text-zinc-400 transition hover:bg-red-500/10 hover:text-red-400"
+    title={t("Eliminar tarefa", "Delete task")}
+    aria-label={t(`Eliminar ${task.title}`, `Delete ${task.title}`)}
+    className="rounded-md p-2 text-muted transition hover:bg-red-500/10 hover:text-danger"
   >
     <Trash2 size={15} />
   </button>
 </div>}
 
 
-                        <p className="mb-4 text-xs leading-5 text-zinc-500">
+                        <p className="mb-4 text-xs leading-5 text-subtle">
                           {task.description}
                         </p>
 
@@ -663,9 +731,9 @@ function Dashboard({
 <div className="mb-4">
   <label
     htmlFor={`status-${task.id}`}
-    className="mb-2 block text-xs text-zinc-500"
+    className="mb-2 block text-xs text-subtle"
   >
-    Estado
+    {t("Estado", "Status")}
   </label>
 
   <select
@@ -678,21 +746,19 @@ function Dashboard({
         e.target.value as TaskStatus
       )
     }
-    className="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-emerald-500"
+    className="w-full rounded-lg border border-line bg-field px-3 py-2 text-xs text-foreground outline-none focus:border-emerald-500"
   >
-    <option value="todo">To Do</option>
-    <option value="progress">In Progress</option>
-    <option value="done">Done</option>
+    {localizedColumns.map((option) => <option key={option.id} value={option.id}>{option.title}</option>)}
   </select>
 </div>
 
-                        <div className="flex items-center gap-2 border-t border-white/10 pt-3 text-xs text-zinc-500">
+                        <div className="flex items-center gap-2 border-t border-line pt-3 text-xs text-subtle">
                           <CalendarDays size={14} />
                           {task.due_date ? (
                             <span>
-                              Entrega a <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
+                              {t("Entrega a", "Due on")} <time dateTime={task.due_date}>{task.due_date.split("-").reverse().join("/")}</time>
                             </span>
-                          ) : "Sem prazo definido"}
+                          ) : t("Sem prazo definido", "No due date")}
                         </div>
 
                       </div>
@@ -716,7 +782,7 @@ function Dashboard({
             role="dialog"
             aria-modal="true"
             aria-labelledby="new-task-title"
-            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#18181b] p-6 shadow-2xl"
+            className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-line bg-dialog p-6 shadow-2xl"
           >
 
             {/* CABEÇALHO DO MODAL */}
@@ -727,16 +793,16 @@ function Dashboard({
   className="text-xl font-bold"
 >
   {editingTaskId !== null
-    ? "Editar tarefa"
-    : "Criar nova tarefa"}
+    ? t("Editar tarefa", "Edit task")
+    : t("Criar nova tarefa", "Create a new task")}
 </h2>
 
               <button
                 type="button"
                 onClick={closeModal}
                 disabled={isSaving}
-                aria-label="Fechar formulário"
-                className="text-zinc-400 transition hover:text-white"
+                aria-label={t("Fechar formulário", "Close form")}
+                className="text-muted transition hover:text-foreground"
               >
                 <X size={20} />
               </button>
@@ -748,16 +814,16 @@ function Dashboard({
               className="space-y-5"
             >
               {feedback?.type === "error" && (
-                <p role="alert" className="text-sm text-red-400">{feedback.text}</p>
+                <p role="alert" className="text-sm text-danger">{localizeError(feedback.text, language)}</p>
               )}
 
               {/* TÍTULO */}
               <div>
                 <label
                   htmlFor="task-title"
-                  className="mb-2 block text-sm text-zinc-300"
+                  className="mb-2 block text-sm text-muted"
                 >
-                  Título
+                  {t("Título", "Title")}
                 </label>
 
                 <input
@@ -768,9 +834,9 @@ function Dashboard({
                   onChange={(e) =>
                     setTitle(e.target.value)
                   }
-                  placeholder="Ex: Criar página de login"
+                  placeholder={t("Ex: Criar página de login", "E.g. Create a sign-in page")}
                   required
-                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white outline-none focus:border-emerald-500"
+                  className="w-full rounded-lg border border-line bg-field px-4 py-3 text-foreground outline-none focus:border-emerald-500"
                 />
               </div>
 
@@ -778,9 +844,9 @@ function Dashboard({
               <div>
                 <label
                   htmlFor="task-description"
-                  className="mb-2 block text-sm text-zinc-300"
+                  className="mb-2 block text-sm text-muted"
                 >
-                  Descrição
+                  {t("Descrição", "Description")}
                 </label>
 
                 <textarea
@@ -790,9 +856,9 @@ function Dashboard({
                   onChange={(e) =>
                     setDescription(e.target.value)
                   }
-                  placeholder="Descreve a tarefa..."
+                  placeholder={t("Descreve a tarefa…", "Describe the task…")}
                   rows={3}
-                  className="w-full resize-none rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white outline-none focus:border-emerald-500"
+                  className="w-full resize-none rounded-lg border border-line bg-field px-4 py-3 text-foreground outline-none focus:border-emerald-500"
                 />
               </div>
 
@@ -800,9 +866,9 @@ function Dashboard({
               <div>
                 <label
                   htmlFor="task-priority"
-                  className="mb-2 block text-sm text-zinc-300"
+                  className="mb-2 block text-sm text-muted"
                 >
-                  Prioridade
+                  {t("Prioridade", "Priority")}
                 </label>
 
                 <select
@@ -814,35 +880,35 @@ function Dashboard({
                       e.target.value as TaskPriority
                     )
                   }
-                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white outline-none focus:border-emerald-500"
+                  className="w-full rounded-lg border border-line bg-field px-4 py-3 text-foreground outline-none focus:border-emerald-500"
                 >
-                  <option value="Baixa">Baixa</option>
-                  <option value="Média">Média</option>
-                  <option value="Alta">Alta</option>
+                  {(["Baixa", "Média", "Alta"] as const).map((value) => (
+                    <option key={value} value={value}>{priorityLabel(value, language)}</option>
+                  ))}
                 </select>
               </div>
 
               <div>
-                <label htmlFor="task-project" className="mb-2 block text-sm text-zinc-300">Projeto</label>
+                <label htmlFor="task-project" className="mb-2 block text-sm text-muted">{t("Projeto", "Project")}</label>
                 <select
                   id="task-project"
                   value={projectId}
                   onChange={(event) => setProjectId(event.target.value)}
                   disabled={isSaving}
-                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white"
+                  className="w-full rounded-lg border border-line bg-field px-4 py-3 text-foreground"
                 >
-                  <option value="">Sem projeto</option>
+                  <option value="">{t("Sem projeto", "No project")}</option>
                   {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
                 </select>
               </div>
 
               <div>
-                <label htmlFor="task-due-date" className="mb-2 block text-sm text-zinc-300">Data de entrega</label>
+                <label htmlFor="task-due-date" className="mb-2 block text-sm text-muted">{t("Data de entrega", "Due date")}</label>
                 <input
                   id="task-due-date" type="date" min="0001-01-01" max="9999-12-31"
                   value={dueDate} disabled={isSaving}
                   onChange={(event) => setDueDate(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-zinc-900 px-4 py-3 text-white scheme-dark"
+                  className="w-full rounded-lg border border-line bg-field px-4 py-3 text-foreground"
                 />
               </div>
 
@@ -853,9 +919,9 @@ function Dashboard({
                   type="button"
                   onClick={closeModal}
                   disabled={isSaving}
-                  className="rounded-lg border border-white/10 px-5 py-3 text-sm text-zinc-300 transition hover:bg-white/5"
+                  className="rounded-lg border border-line px-5 py-3 text-sm text-muted transition hover:bg-tint"
                 >
-                  Cancelar
+                  {t("Cancelar", "Cancel")}
                 </button>
 
                 <button
@@ -863,9 +929,9 @@ function Dashboard({
   disabled={isSaving}
   className="rounded-lg bg-emerald-500 px-5 py-3 text-sm font-semibold text-black transition hover:bg-emerald-400 disabled:opacity-50"
 >
-  {isSaving ? "A guardar…" : editingTaskId !== null
-    ? "Guardar alterações"
-    : "Criar tarefa"}
+  {isSaving ? t("A guardar…", "Saving…") : editingTaskId !== null
+    ? t("Guardar alterações", "Save changes")
+    : t("Criar tarefa", "Create task")}
 </button>
 
               </div>
