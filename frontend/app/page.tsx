@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   ListTodo,
+  LogOut,
   Settings,
   Plus,
   Circle,
@@ -476,6 +477,18 @@ function Dashboard({
     },
   ];
 
+  const signOutButton = (
+    <button
+      type="button"
+      disabled={isSaving}
+      onClick={() => runMutation(onLogout, t("Sessão terminada.", "Signed out."))}
+      className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left text-sm text-muted hover:bg-tint hover:text-foreground disabled:opacity-50"
+    >
+      <LogOut size={18} aria-hidden="true" />
+      {t("Terminar sessão", "Sign out")}
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <div className="flex min-h-screen">
@@ -504,14 +517,18 @@ function Dashboard({
             ))}
           </nav>
 
-          <div className="mt-auto border-t border-line pt-6 text-sm text-subtle">
-            TaskFlow v1.0
+          <div className="mt-auto space-y-3 border-t border-line pt-4">
+            {signOutButton}
+            <p className="px-4 text-xs text-subtle">TaskFlow v1.0</p>
           </div>
         </aside>
 
         {/* CONTEÚDO PRINCIPAL */}
-        <main className="min-w-0 flex-1 p-6 md:p-10">
-          <nav aria-label={t("Secções", "Sections")} className="mb-6 flex flex-wrap gap-3 md:hidden">
+        <main className="relative min-w-0 flex-1 p-6 md:p-10">
+          <div className="absolute right-6 top-6 md:right-10 md:top-10">
+            <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
+          </div>
+          <nav aria-label={t("Secções", "Sections")} className="mb-6 flex flex-wrap gap-3 pr-14 md:hidden">
             {sections.map(({ id, title, englishTitle }) => (
               <button
                 key={id} type="button" aria-current={section === id ? "page" : undefined}
@@ -524,7 +541,7 @@ function Dashboard({
           </nav>
 
           {/* HEADER */}
-          <div className="mb-10 flex flex-wrap items-center justify-between gap-4">
+          <div className="mb-10 flex flex-wrap items-center justify-between gap-4 md:pr-14">
 
             <div>
               <p className="mb-2 text-sm text-subtle">
@@ -542,15 +559,6 @@ function Dashboard({
 
             <div className="flex flex-wrap items-center gap-3">
               {user.display_name && <span className="break-all text-sm text-muted">{user.display_name}</span>}
-              <NotificationCenter onAccept={joinProject} onUnauthorized={onUnauthorized} disabled={isSaving} />
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={() => runMutation(onLogout, t("Sessão terminada.", "Signed out."))}
-                className="rounded-lg border border-line-strong px-3 py-2 text-sm hover:bg-tint disabled:opacity-50"
-              >
-                {t("Terminar sessão", "Sign out")}
-              </button>
             {section === "tasks" && <button
   type="button"
   disabled={isLoading || Boolean(loadError) || isSaving}
@@ -833,6 +841,9 @@ function Dashboard({
           </div>
           </>
           )}
+          <footer className="mt-8 border-t border-line pt-3 md:hidden">
+            {signOutButton}
+          </footer>
         </main>
       </div>
 
