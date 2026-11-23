@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import {
   LayoutDashboard,
   FolderKanban,
@@ -19,6 +19,7 @@ import {
 import { ApiError, errorMessage } from "@/lib/api";
 import { getProfile, logout, type Profile, type User } from "@/lib/auth-api";
 import { LanguageContext, localizeError, priorityLabel, useLanguage } from "@/lib/language";
+import { startLiveRefresh } from "@/lib/live-refresh";
 import {
   acceptInvitation, getProject, listProjectMembers, listProjects, removeProject, saveProject, sendInvitation,
   type Project, type ProjectInput, type ProjectMember,
@@ -224,70 +225,53 @@ function Dashboard({
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [loadError, setLoadError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const hasLoaded = useRef(false);
+  const saving = useRef(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
-    const controller = new AbortController();
-
-    Promise.all([
-      listTasks(controller.signal),
-      listProjects(controller.signal),
-    ])
-      .then(([loadedTasks, loadedProjects]) => {
-        if (controller.signal.aborted) return;
+    if (isSaving) return;
+    return startLiveRefresh(async (signal) => {
+      if (saving.current) return;
+      try {
+        const [loadedTasks, loadedProjects] = await Promise.all([listTasks(signal), listProjects(signal)]);
+        if (signal.aborted || saving.current) return;
         setTasks(loadedTasks);
         setProjects(loadedProjects);
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        hasLoaded.current = true;
+        setLoadError("");
+      } catch (error) {
+        if (signal.aborted || saving.current) return;
         if (error instanceof ApiError && error.status === 401) {
           onUnauthorized();
-        } else {
+        } else if (!hasLoaded.current) {
           setLoadError(errorMessage(error));
         }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false);
-      });
-
-    return () => controller.abort();
-  }, [loadAttempt, onUnauthorized]);
+      } finally {
+        if (!signal.aborted && !saving.current) setIsLoading(false);
+      }
+    });
+  }, [isSaving, loadAttempt, onUnauthorized]);
 
   useEffect(() => {
     if (section !== "tasks") return;
-    const controller = new AbortController();
-    let loading = false;
-
-    async function refreshMembers() {
-      if (loading) return;
-      loading = true;
+    return startLiveRefresh(async (signal) => {
       try {
-        const result = await listProjectMembers(controller.signal);
-        if (!controller.signal.aborted) {
+        const result = await listProjectMembers(signal);
+        if (!signal.aborted) {
           setMembers(result);
           setMembersError("");
         }
       } catch (error) {
-        if (controller.signal.aborted) return;
+        if (signal.aborted) return;
         if (error instanceof ApiError && error.status === 401) {
           onUnauthorized();
         } else {
           setMembersError(errorMessage(error));
         }
-      } finally {
-        loading = false;
       }
-    }
-
-    void refreshMembers();
-    const timer = window.setInterval(refreshMembers, 15_000);
-    window.addEventListener("focus", refreshMembers);
-    return () => {
-      controller.abort();
-      window.clearInterval(timer);
-      window.removeEventListener("focus", refreshMembers);
-    };
-  }, [section, taskProjectId, onUnauthorized]);
+    });
+  }, [section, taskProjectId, loadAttempt, onUnauthorized]);
 
   // Estado do formulário
   const [showModal, setShowModal] = useState(false);
@@ -302,10 +286,15 @@ function Dashboard({
   const [priority, setPriority] =
     useState<TaskPriority>("Média");
 
-  async function runMutation(action: () => Promise<void>, success: string) {
-    if (isSaving) return false;
+  function setSaving(value: boolean) {
+    saving.current = value;
+    setIsSaving(value);
+  }
 
-    setIsSaving(true);
+  async function runMutation(action: () => Promise<void>, success: string) {
+    if (saving.current) return false;
+
+    setSaving(true);
     setFeedback(null);
     try {
       await action();
@@ -319,7 +308,7 @@ function Dashboard({
       }
       return false;
     } finally {
-      setIsSaving(false);
+      setSaving(false);
     }
   }
 
@@ -419,6 +408,10 @@ function Dashboard({
     }
 
     const existing = editingTask;
+    if (editingTaskId !== null && !existing) {
+      setFeedback({ type: "error", text: t("A tarefa já não está disponível.", "This task is no longer available.") });
+      return;
+    }
     const input = {
       title: title.trim(),
       description: description.trim(),
@@ -661,7 +654,7 @@ function Dashboard({
           {section === "settings" ? (
             <SettingsPanel
               user={user} onProfile={onProfile} onCredentialsChanged={onCredentialsChanged}
-              onUnauthorized={onUnauthorized} onBusy={setIsSaving}
+              onUnauthorized={onUnauthorized} onBusy={setSaving}
             />
           ) : section === "projects" ? (
             !isLoading && !loadError && (

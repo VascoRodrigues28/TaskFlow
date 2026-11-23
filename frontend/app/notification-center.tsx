@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Bell, Trash2 } from "lucide-react";
 import { ApiError, errorMessage } from "@/lib/api";
 import { localizeError, useLanguage } from "@/lib/language";
+import { startLiveRefresh } from "@/lib/live-refresh";
 import { deleteNotification, listNotifications, markNotificationRead, type NotificationFeed, type TaskNotification } from "@/lib/notifications-api";
 import { listInvitations, type Invitation } from "@/lib/projects-api";
 
@@ -37,39 +38,26 @@ export function NotificationCenter({
   const buttonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    let controller: AbortController | undefined;
-
-    async function load() {
-      controller?.abort();
-      const request = new AbortController();
-      controller = request;
+    if (pending) return;
+    return startLiveRefresh(async (signal) => {
       try {
         const [nextFeed, nextInvitations] = await Promise.all([
-          listNotifications(request.signal), listInvitations(request.signal),
+          listNotifications(signal), listInvitations(signal),
         ]);
-        if (request.signal.aborted) return;
+        if (signal.aborted) return;
         setFeed(nextFeed);
         setInvitations(nextInvitations);
         setLoadError("");
       } catch (error) {
-        if (request.signal.aborted) return;
+        if (signal.aborted) return;
         if (error instanceof ApiError && error.status === 401) {
           onUnauthorized();
         } else {
           setLoadError(errorMessage(error));
         }
       }
-    }
-
-    void load();
-    const timer = window.setInterval(load, 15_000);
-    window.addEventListener("focus", load);
-    return () => {
-      controller?.abort();
-      window.clearInterval(timer);
-      window.removeEventListener("focus", load);
-    };
-  }, [onUnauthorized, refresh]);
+    });
+  }, [onUnauthorized, pending, refresh]);
 
   async function run(action: () => Promise<void>) {
     setPending(true);
