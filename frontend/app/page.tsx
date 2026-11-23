@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   ListTodo,
+  ListChecks,
   LogOut,
   Settings,
   Plus,
@@ -42,12 +43,14 @@ import type { TaskNotification } from "@/lib/notifications-api";
 import { ProjectsPanel } from "./projects-panel";
 import { SettingsPanel } from "./settings-panel";
 import { TaskDetails } from "./task-details";
+import { MyTasks } from "./my-tasks";
 import { defaultTaskFilters, filterTasks, TaskFilters } from "./task-filters";
 
 const sections = [
   { id: "dashboard", title: "Dashboard", englishTitle: "Dashboard", icon: LayoutDashboard },
   { id: "projects", title: "Projetos", englishTitle: "Projects", icon: FolderKanban },
   { id: "tasks", title: "Tarefas", englishTitle: "Tasks", icon: ListTodo },
+  { id: "my-tasks", title: "As minhas tarefas", englishTitle: "My tasks", icon: ListChecks },
   { id: "settings", title: "Definições", englishTitle: "Settings", icon: Settings },
 ] as const;
 type Section = (typeof sections)[number]["id"];
@@ -254,7 +257,7 @@ function Dashboard({
   }, [isSaving, loadAttempt, onUnauthorized]);
 
   useEffect(() => {
-    if (section !== "tasks") return;
+    if (section !== "tasks" && section !== "my-tasks") return;
     return startLiveRefresh(async (signal) => {
       try {
         const result = await listProjectMembers(signal);
@@ -323,6 +326,11 @@ function Dashboard({
 
   function viewProjectTasks(id: string) {
     navigate("tasks", id);
+  }
+
+  function openTaskDetails(id: number) {
+    setFeedback(null);
+    setDetailsTaskId(id);
   }
 
   function submitProject(input: ProjectInput, id?: string) {
@@ -668,6 +676,14 @@ function Dashboard({
                 onClearFeedback={() => setFeedback(null)}
               />
             )
+          ) : section === "my-tasks" ? (
+            !isLoading && !loadError && (
+              <MyTasks
+                tasks={tasks.filter((task) => task.assignee_id === user.id)}
+                projectNames={projectNames}
+                onOpen={openTaskDetails}
+              />
+            )
           ) : section === "dashboard" ? (
           !isLoading && !loadError && (
             <>
@@ -776,10 +792,7 @@ function Dashboard({
                       <button
                         key={task.id} type="button" aria-label={task.title}
                         aria-describedby={`task-summary-${task.id} task-priority-${task.id}`}
-                        onClick={() => {
-                          setFeedback(null);
-                          setDetailsTaskId(task.id);
-                        }}
+                        onClick={() => openTaskDetails(task.id)}
                         className="block w-full rounded-lg border border-line bg-field px-3 py-2.5 text-left transition hover:border-emerald-500/40 hover:bg-tint focus-visible:outline-2 focus-visible:outline-emerald-500"
                       >
                         <span className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">

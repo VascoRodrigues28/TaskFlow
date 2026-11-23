@@ -83,3 +83,14 @@ class DailyActivityRecord(Base):
     user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     day: Mapped[date] = mapped_column(primary_key=True)
     count: Mapped[int] = mapped_column()
+
+
+class TaskHistoryRecord(Base):
+    __tablename__ = "task_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    action: Mapped[str] = mapped_column(Text)
+    actor_name: Mapped[str] = mapped_column(Text)
+    assignee_name: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

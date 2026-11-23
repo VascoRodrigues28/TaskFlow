@@ -5,15 +5,30 @@ from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import delete, func, or_, select
 
 from activity import record_contribution
-from models import ProjectRecord, TaskRecord, UserRecord
+from models import ProjectRecord, TaskHistoryRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
 from routers.projects import project_access, project_not_found
+from schemas.task_history import HistoryAction, TaskHistoryItem
 from schemas.tasks import Task, TaskAssignmentUpdate, TaskCompletionUpdate, TaskCreate, TaskUpdate
 from task_activity import record_task_activity
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 TaskId = Annotated[int, Path(gt=0)]
 MAX_ACTIVE_ASSIGNMENTS = 5
+
+
+def record_history(
+    session: DatabaseSession, task: TaskRecord, user: CurrentUser,
+    action: HistoryAction, assignee_name: str | None = None,
+) -> None:
+    if task.id is None:
+        session.flush()
+    session.add(TaskHistoryRecord(
+        task_id=task.id,
+        action=action,
+        actor_name=user.display_name or user.email,
+        assignee_name=assignee_name,
+    ))
 
 
 def task_not_found() -> HTTPException:
@@ -100,6 +115,18 @@ def get_task(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> Ta
     return task_response(task, user.id)
 
 
+@router.get("/{task_id}/history")
+def get_task_history(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> list[TaskHistoryItem]:
+    access = (TaskRecord.id == task_id, task_access(user.id))
+    if session.scalar(select(TaskRecord.id).where(*access)) is None:
+        raise task_not_found()
+    statement = (
+        select(TaskHistoryRecord).join(TaskRecord).where(*access)
+        .order_by(TaskHistoryRecord.id.desc())
+    )
+    return [TaskHistoryItem.model_validate(item) for item in session.scalars(statement)]
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 def create_task(payload: TaskCreate, session: DatabaseSession, user: CurrentUser) -> Task:
     if payload.project_id is not None:
@@ -107,6 +134,7 @@ def create_task(payload: TaskCreate, session: DatabaseSession, user: CurrentUser
     task = TaskRecord(**payload.model_dump(), owner_id=user.id, status="todo")
     session.add(task)
     record_task_activity(session, task, user, "task_added")
+    record_history(session, task, user, "created")
     record_contribution(session, user.id)
     session.commit()
     return task_response(task, user.id)
@@ -124,7 +152,11 @@ def update_task(task_id: TaskId, payload: TaskUpdate, session: DatabaseSession, 
     ):
         raise HTTPException(status_code=403, detail="Só o autor pode mudar o projeto da tarefa.")
     previous_project_id = task.project_id
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = {
+        field: value for field, value in payload.model_dump(exclude_unset=True).items()
+        if getattr(task, field) != value
+    }
+    for field, value in changes.items():
         setattr(task, field, value)
     if task.project_id != previous_project_id:
         if task.assignee_id is not None and not can_assign_to(session, task, task.assignee_id):
@@ -132,6 +164,8 @@ def update_task(task_id: TaskId, payload: TaskUpdate, session: DatabaseSession, 
             if task.status == "progress":
                 task.status = "todo"
         record_task_activity(session, task, user, "task_added")
+    if changes:
+        record_history(session, task, user, "edited")
     session.commit()
     return task_response(task, user.id)
 
@@ -157,6 +191,10 @@ def update_task_assignment(
     notify_status_change(session, task, user, previous_status)
     if assignee_id is not None:
         record_contribution(session, user.id)
+        assignee = session.get(UserRecord, assignee_id)
+        record_history(session, task, user, "assigned", (assignee.display_name or assignee.email) if assignee else None)
+    else:
+        record_history(session, task, user, "unassigned")
     session.commit()
     return task_response(task, user.id)
 
@@ -178,6 +216,9 @@ def update_task_completion(
     notify_status_change(session, task, user, previous_status)
     if payload.completed and previous_status != "done":
         record_contribution(session, user.id)
+        record_history(session, task, user, "completed")
+    elif not payload.completed and previous_status == "done":
+        record_history(session, task, user, "reopened")
     session.commit()
     return task_response(task, user.id)
 

@@ -3,6 +3,18 @@ import { request } from "./api";
 export type TaskStatus = "todo" | "progress" | "done";
 export type TaskPriority = "Baixa" | "Média" | "Alta";
 
+export type TaskHistoryItem = {
+  id: number;
+  action: "created" | "edited" | "assigned" | "unassigned" | "completed" | "reopened";
+  actor_name: string;
+  assignee_name: string | null;
+  created_at: string;
+};
+
+export async function getTaskHistory(id: number, signal: AbortSignal): Promise<TaskHistoryItem[]> {
+  return (await request(`/tasks/${id}/history`, { signal })).json();
+}
+
 export type Task = {
   id: number;
   title: string;

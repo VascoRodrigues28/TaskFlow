@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Pencil, Trash2, X } from "lucide-react";
 import type { Task } from "@/lib/tasks-api";
 import { localizeError, priorityLabel, useLanguage } from "@/lib/language";
+import { TaskHistory } from "./task-history";
 
 export function TaskDetails({
   task, status, project, participants, busy, assignmentUnavailable, feedback, onAssign, onComplete, onEdit, onDelete, onClose,
@@ -107,6 +108,7 @@ export function TaskDetails({
             </p>
           )}
         </div>
+        <TaskHistory key={task.id} taskId={task.id} />
         {task.can_edit && (
           <footer className="flex flex-wrap justify-end gap-2 border-t border-line pt-4">
             <button type="button" onClick={onEdit} disabled={busy}
