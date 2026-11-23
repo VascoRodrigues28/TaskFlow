@@ -2,7 +2,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, Path, Response, status
-from sqlalchemy import delete, func, or_, select
+from sqlalchemy import func, or_, select
 
 from activity import record_contribution
 from models import ProjectRecord, TaskCommentRecord, TaskHistoryRecord, TaskRecord, UserRecord
@@ -48,7 +48,7 @@ def require_project(session: DatabaseSession, project_id: UUID, user_id: UUID, *
 
 def task_access(user_id: UUID):
     return or_(
-        TaskRecord.owner_id == user_id,
+        TaskRecord.project_id.is_(None) & (TaskRecord.owner_id == user_id),
         TaskRecord.project_id.in_(select(ProjectRecord.id).where(project_access(user_id))),
     )
 
@@ -77,8 +77,20 @@ def require_capacity(session: DatabaseSession, assignee_id: UUID) -> None:
 
 
 def locked_accessible_task(session: DatabaseSession, task_id: int, user_id: UUID) -> TaskRecord:
+    scope = session.execute(
+        select(TaskRecord.project_id).where(TaskRecord.id == task_id, task_access(user_id))
+    ).one_or_none()
+    if scope is None:
+        raise task_not_found()
+    project_id = scope.project_id
+    if project_id is not None:
+        require_project(session, project_id, user_id, lock=True)
     task = session.scalar(
-        select(TaskRecord).where(TaskRecord.id == task_id, task_access(user_id)).with_for_update()
+        select(TaskRecord).where(
+            TaskRecord.id == task_id,
+            TaskRecord.project_id.is_not_distinct_from(project_id),
+            task_access(user_id),
+        ).with_for_update()
     )
     if task is None:
         raise task_not_found()
@@ -246,12 +258,7 @@ def update_task_completion(
 
 @router.delete("/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_task(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> Response:
-    statement = (
-        delete(TaskRecord)
-        .where(TaskRecord.id == task_id, task_access(user.id))
-        .returning(TaskRecord.id)
-    )
-    if session.scalar(statement) is None:
-        raise task_not_found()
+    task = locked_accessible_task(session, task_id, user.id)
+    session.delete(task)
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

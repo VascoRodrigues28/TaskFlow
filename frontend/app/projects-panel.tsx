@@ -4,6 +4,7 @@ import { useState, type FormEvent } from "react";
 import { FolderKanban, Pencil, Plus, Trash2 } from "lucide-react";
 import type { Project, ProjectInput } from "@/lib/projects-api";
 import { useLanguage } from "@/lib/language";
+import { ProjectPeople } from "./project-people";
 
 type Props = {
   projects: Project[];
@@ -23,6 +24,7 @@ export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTask
   const { t } = useLanguage();
   const [draft, setDraft] = useState<Project | ProjectInput | null>(null);
   const [inviteProjectId, setInviteProjectId] = useState<string | null>(null);
+  const [peopleProjectId, setPeopleProjectId] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState("");
   const [validationError, setValidationError] = useState("");
   const editingId = draft && "id" in draft ? draft.id : undefined;
@@ -138,6 +140,13 @@ export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTask
               >
                 {t("Convidar", "Invite")}
               </button>
+              <button
+                type="button" className={actionButton} disabled={isSaving || draft !== null}
+                aria-expanded={peopleProjectId === project.id}
+                onClick={() => setPeopleProjectId((previous) => previous === project.id ? null : project.id)}
+              >
+                {t("Gerir membros", "Manage members")}
+              </button>
               </>}
             </div>
             {inviteProjectId === project.id && (
@@ -159,6 +168,9 @@ export function ProjectsPanel({ projects, isSaving, onSave, onDelete, onViewTask
                   <button type="button" disabled={isSaving} className={actionButton} onClick={() => setInviteProjectId(null)}>{t("Cancelar", "Cancel")}</button>
                 </div>
               </form>
+            )}
+            {project.role === "host" && peopleProjectId === project.id && (
+              <ProjectPeople key={project.id} projectId={project.id} />
             )}
           </article>
         ))}

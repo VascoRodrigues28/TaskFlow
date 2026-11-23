@@ -4,6 +4,18 @@ export type Project = { id: string; name: string; description: string; role: "ho
 export type ProjectInput = Pick<Project, "name" | "description">;
 export type Invitation = { id: string; project_id: string; project_name: string };
 export type ProjectMember = { id: string; project_id: string; name: string };
+export type ProjectPeople = {
+  members: { id: string; name: string; email: string; role: Project["role"] }[];
+  invitations: { id: string; email: string }[];
+};
+
+export async function getProjectPeople(projectId: string, signal: AbortSignal): Promise<ProjectPeople> {
+  return (await request(`/projects/${projectId}/people`, { signal })).json();
+}
+
+export async function removeProjectAccess(projectId: string, kind: "members" | "invitations", id: string) {
+  await request(`/projects/${projectId}/${kind}/${id}`, { method: "DELETE" });
+}
 
 export async function listProjectMembers(signal: AbortSignal): Promise<ProjectMember[]> {
   return (await request("/projects/members", { signal })).json();

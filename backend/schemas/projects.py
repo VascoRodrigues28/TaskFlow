@@ -41,3 +41,20 @@ class ProjectMember(BaseModel):
     project_id: UUID
     id: UUID
     name: str
+
+
+class ManagedMember(BaseModel):
+    id: UUID
+    name: str
+    email: EmailStr
+    role: Literal["host", "member"]
+
+
+class ManagedInvitation(BaseModel):
+    id: UUID
+    email: EmailStr
+
+
+class ProjectPeople(BaseModel):
+    members: list[ManagedMember]
+    invitations: list[ManagedInvitation]

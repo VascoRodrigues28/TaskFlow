@@ -25,6 +25,7 @@ const translatedErrors: Record<string, string> = {
   "Tarefa não encontrada.": "Task not found.",
   "Projeto não encontrado.": "Project not found.",
   "Convite não encontrado.": "Invitation not found.",
+  "Membro não encontrado.": "Member not found.",
   "Notificação não encontrada.": "Notification not found.",
   "Já és o anfitrião deste projeto.": "You are already the host of this project.",
   "Já existe um convite para este email.": "There is already an invitation for this email.",

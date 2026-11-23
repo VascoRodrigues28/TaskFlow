@@ -31,6 +31,8 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isProject = /^projects\/[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(endpoint)
     && ["GET", "PUT", "DELETE"].includes(method);
   const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
+  const isProjectPeople = (method === "GET" && new RegExp(`^projects/${uuid}/people$`, "i").test(endpoint))
+    || (method === "DELETE" && new RegExp(`^projects/${uuid}/(?:members|invitations)/${uuid}$`, "i").test(endpoint));
   const isInvitation = (method === "GET" && endpoint === "projects/invitations")
     || (method === "POST" && new RegExp(`^projects/(?:${uuid}/invitations|invitations/${uuid}/accept)$`, "i").test(endpoint));
   const isNotification = (method === "GET" && endpoint === "notifications")
@@ -39,7 +41,7 @@ async function handle(request: NextRequest, context: RouteContext<"/api/[...path
   const isActivity = method === "GET" && endpoint === "activity";
   const allowed = isLogin || isRegister || isLogout || isProfile || isCredentialChange
     || isTaskCollection || isTask || isTaskWorkflow || isTaskHistory || isTaskComments || isProjectCollection || isProjectMembers
-    || isProject || isInvitation || isNotification || isActivity;
+    || isProject || isProjectPeople || isInvitation || isNotification || isActivity;
   if (!allowed) {
     return failure(404, "Rota não encontrada.");
   }
