@@ -94,3 +94,13 @@ class TaskHistoryRecord(Base):
     actor_name: Mapped[str] = mapped_column(Text)
     assignee_name: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TaskCommentRecord(Base):
+    __tablename__ = "task_comments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    author_name: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

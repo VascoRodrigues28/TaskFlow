@@ -5,9 +5,10 @@ from fastapi import APIRouter, HTTPException, Path, Response, status
 from sqlalchemy import delete, func, or_, select
 
 from activity import record_contribution
-from models import ProjectRecord, TaskHistoryRecord, TaskRecord, UserRecord
+from models import ProjectRecord, TaskCommentRecord, TaskHistoryRecord, TaskRecord, UserRecord
 from routers.auth import CurrentUser, DatabaseSession
 from routers.projects import project_access, project_not_found
+from schemas.task_comments import TaskComment, TaskCommentCreate
 from schemas.task_history import HistoryAction, TaskHistoryItem
 from schemas.tasks import Task, TaskAssignmentUpdate, TaskCompletionUpdate, TaskCreate, TaskUpdate
 from task_activity import record_task_activity
@@ -125,6 +126,26 @@ def get_task_history(task_id: TaskId, session: DatabaseSession, user: CurrentUse
         .order_by(TaskHistoryRecord.id.desc())
     )
     return [TaskHistoryItem.model_validate(item) for item in session.scalars(statement)]
+
+
+@router.get("/{task_id}/comments")
+def list_task_comments(task_id: TaskId, session: DatabaseSession, user: CurrentUser) -> list[TaskComment]:
+    access = (TaskRecord.id == task_id, task_access(user.id))
+    if session.scalar(select(TaskRecord.id).where(*access)) is None:
+        raise task_not_found()
+    statement = select(TaskCommentRecord).join(TaskRecord).where(*access).order_by(TaskCommentRecord.id)
+    return [TaskComment.model_validate(item) for item in session.scalars(statement)]
+
+
+@router.post("/{task_id}/comments", status_code=status.HTTP_201_CREATED)
+def create_task_comment(
+    task_id: TaskId, payload: TaskCommentCreate, session: DatabaseSession, user: CurrentUser,
+) -> TaskComment:
+    task = locked_accessible_task(session, task_id, user.id)
+    comment = TaskCommentRecord(task_id=task.id, author_name=user.display_name or user.email, body=payload.body)
+    session.add(comment)
+    session.commit()
+    return TaskComment.model_validate(comment)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

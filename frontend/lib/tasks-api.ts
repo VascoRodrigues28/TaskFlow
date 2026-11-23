@@ -15,6 +15,20 @@ export async function getTaskHistory(id: number, signal: AbortSignal): Promise<T
   return (await request(`/tasks/${id}/history`, { signal })).json();
 }
 
+export type TaskComment = { id: number; author_name: string; body: string; created_at: string };
+
+export async function listTaskComments(id: number, signal: AbortSignal): Promise<TaskComment[]> {
+  return (await request(`/tasks/${id}/comments`, { signal })).json();
+}
+
+export async function createTaskComment(id: number, body: string): Promise<TaskComment> {
+  return (await request(`/tasks/${id}/comments`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ body }),
+  })).json();
+}
+
 export type Task = {
   id: number;
   title: string;
