@@ -3,10 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import InvalidTokenError
-from psycopg.errors import UniqueViolation
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from database import get_session
@@ -115,9 +114,11 @@ def update_credentials(payload: CredentialUpdate, user: CurrentUser, session: Da
     locked_user.token_version += 1
     try:
         session.commit()
-    except IntegrityError as error:
+    except DBAPIError as error:
         session.rollback()
-        if isinstance(error.orig, UniqueViolation):
+        # pg8000 puts the PostgreSQL error fields in the first argument.
+        args = error.orig.args
+        if args and isinstance(args[0], dict) and args[0].get("C") == "23505":
             raise HTTPException(status_code=409, detail="O email já está registado.") from None
         raise
     return Response(status_code=status.HTTP_204_NO_CONTENT)

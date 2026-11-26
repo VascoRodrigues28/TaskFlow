@@ -1,7 +1,7 @@
 alembic==1.20.1
 email-validator==2.4.0
 fastapi==0.165.0
-psycopg[binary]==3.3.9
+pg8000==1.31.6
 pwdlib[argon2]==0.4.2
 pydantic==2.14.4
 PyJWT==2.15.1
